@@ -1,0 +1,19 @@
+{
+  "" : {
+    "diagnostics" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop--6E83512BD52DBD31-testable-primary.dia",
+    "emit-module-dependencies" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop--6E83512BD52DBD31-testable-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop--6E83512BD52DBD31-testable-primary-emit-module.dia",
+    "pch" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop--6E83512BD52DBD31-testable-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop--6E83512BD52DBD31-testable-primary.swiftdeps"
+  },
+  "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/AegisDesktop.swift" : {
+    "const-values" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.swiftconstvalues",
+    "dependencies" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.d",
+    "diagnostics" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.dia",
+    "index-unit-output-path" : "/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.o",
+    "llvm-bc" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.bc",
+    "object" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.o",
+    "swift-dependencies" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop.swiftdeps",
+    "swiftmodule" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Debug/AegisDesktop--6E83512BD52DBD31-testable-t.build/Objects-normal/arm64/AegisDesktop~partial.swiftmodule"
+  }
+}

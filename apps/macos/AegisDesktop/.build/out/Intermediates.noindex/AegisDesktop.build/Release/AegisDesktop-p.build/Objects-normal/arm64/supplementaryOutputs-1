@@ -1,0 +1,11 @@
+{
+  "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/AegisDesktop.swift" : {
+    "abi-baseline-json" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop.abi.json",
+    "const-values" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop-primary.swiftconstvalues",
+    "dependencies" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop-primary.d",
+    "diagnostics" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop-primary.dia",
+    "swiftdoc" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop.swiftdoc",
+    "swiftmodule" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop.swiftmodule",
+    "swiftsourceinfo" : "/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/.build/out/Intermediates.noindex/AegisDesktop.build/Release/AegisDesktop-p.build/Objects-normal/arm64/AegisDesktop.swiftsourceinfo"
+  }
+}

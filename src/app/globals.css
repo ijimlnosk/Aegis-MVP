@@ -1,0 +1,46 @@
+@import "./components.css";
+
+:root {
+  --bg: #050709;
+  --panel: rgba(14, 21, 24, 0.78);
+  --line: rgba(100, 229, 238, 0.17);
+  --cyan: #69e7ef;
+  --cyan-strong: #16bdc9;
+  --text: #eef9f9;
+  --muted: #789094;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 50% 24%, #0f292c 0, transparent 32%),
+    linear-gradient(135deg, #06090b, var(--bg));
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button { font: inherit; }
+
+.shell {
+  width: min(920px, calc(100% - 32px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.topbar, .approval__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand, .signal, .eyebrow, .log__time {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+
+.signal { color: var(--muted); }
+.signal--connected, .signal--listening { color: var(--cyan); }
+.signal--error { color: #ff8d89; }

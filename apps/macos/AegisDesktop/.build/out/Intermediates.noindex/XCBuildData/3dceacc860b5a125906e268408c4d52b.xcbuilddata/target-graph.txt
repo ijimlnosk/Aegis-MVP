@@ -1,0 +1,6 @@
+Target dependency graph (3 targets)
+Target 'AllExcludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'AegisDesktop-product' in project 'AegisDesktop'
+➜ Explicit dependency on target 'AegisDesktop' in project 'AegisDesktop'
+Target 'AegisDesktop' in project 'AegisDesktop' (no dependencies)
+Target 'AegisDesktop-product' in project 'AegisDesktop' (no dependencies)
