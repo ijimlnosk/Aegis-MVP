@@ -1,5 +1,8 @@
 /Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/AegisDesktop.swift
 /Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/AgentPlanner.swift
+/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/BrowserTools.swift
 /Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/KakaoTalkAutomation.swift
 /Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/LearningMemory.swift
+/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/LearningStore.swift
 /Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/MacTools.swift
+/Users/kimjinsol/Aegis-MVP/apps/macos/AegisDesktop/Sources/AegisDesktop/WakeSampleRecorder.swift

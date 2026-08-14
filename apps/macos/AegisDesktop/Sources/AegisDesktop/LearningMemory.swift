@@ -18,10 +18,11 @@ enum LearningMemory {
   static func recent(limit: Int = 6) -> [AgentTrace] {
     guard let data = try? Data(contentsOf: fileURL),
           let values = try? JSONDecoder().decode([AgentTrace].self, from: data) else { return [] }
-    return Array(values.suffix(limit))
+    return Array(values.filter { !($0.action == "open_application" && $0.request.contains("검색")) }.suffix(limit))
   }
 
   static func record(request: String, action: String, result: String) {
+    LearningStore.record(request: request, action: action, result: result)
     var values = recent(limit: 80)
     values.append(AgentTrace(request: request, action: action, result: result, createdAt: .now))
     guard let data = try? JSONEncoder().encode(Array(values.suffix(80))) else { return }

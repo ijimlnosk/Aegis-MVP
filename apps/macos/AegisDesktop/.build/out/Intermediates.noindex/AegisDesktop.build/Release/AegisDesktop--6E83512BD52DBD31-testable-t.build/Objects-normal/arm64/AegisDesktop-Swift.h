@@ -382,6 +382,13 @@ SWIFT_CLASS("_TtC12AegisDesktop11SpeechInput")
 - (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
 @end
 
+@class AVAudioRecorder;
+SWIFT_CLASS("_TtC12AegisDesktop18WakeSampleRecorder")
+@interface WakeSampleRecorder : NSObject <AVAudioRecorderDelegate>
+- (void)audioRecorderDidFinishRecording:(AVAudioRecorder * _Nonnull)_ successfully:(BOOL)_;
+- (nonnull instancetype)init OBJC_DESIGNATED_INITIALIZER;
+@end
+
 #endif // defined(__OBJC__)
 #if __has_attribute(external_source_symbol)
 # pragma clang attribute pop

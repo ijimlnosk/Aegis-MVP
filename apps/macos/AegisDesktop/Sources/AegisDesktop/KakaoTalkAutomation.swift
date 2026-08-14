@@ -28,6 +28,7 @@ enum KakaoTalkAutomation {
       guard let app = await openKakaoIfNeeded() else {
         return "카카오톡을 실행하지 못했습니다."
       }
+      LearningStore.rememberApplication(alias: "카카오톡", bundleID: "com.kakao.KakaoTalkMac", displayName: app.localizedName ?? "KakaoTalk")
       app.activate(options: [])
       try? await Task.sleep(for: .seconds(1))
       let application = AXUIElementCreateApplication(app.processIdentifier)

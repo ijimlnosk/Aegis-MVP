@@ -511,6 +511,13 @@
     "moduleName" : "QuartzCore"
   },
   {
+    "clangModuleMapPath" : "\/Applications\/Xcode-beta.app\/Contents\/Developer\/Platforms\/MacOSX.platform\/Developer\/SDKs\/MacOSX.sdk\/usr\/include\/SQLite3.modulemap",
+    "clangModulePath" : "\/Users\/kimjinsol\/Aegis-MVP\/apps\/macos\/AegisDesktop\/.build\/out\/SDKExplicitPrecompiledModules\/SQLite3-C6ZZNAU3G1BOGOYURZHVTPOXM.pcm",
+    "isBridgingHeaderDependency" : false,
+    "isFramework" : false,
+    "moduleName" : "SQLite3"
+  },
+  {
     "clangModuleMapPath" : "\/Applications\/Xcode-beta.app\/Contents\/Developer\/Platforms\/MacOSX.platform\/Developer\/SDKs\/MacOSX.sdk\/System\/Library\/Frameworks\/Security.framework\/Modules\/module.modulemap",
     "clangModulePath" : "\/Users\/kimjinsol\/Aegis-MVP\/apps\/macos\/AegisDesktop\/.build\/out\/SDKExplicitPrecompiledModules\/Security-93H3IAWZRWFAWA59MXF78YHSQ.pcm",
     "isBridgingHeaderDependency" : false,

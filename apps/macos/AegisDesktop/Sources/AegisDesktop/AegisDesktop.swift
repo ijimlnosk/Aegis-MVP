@@ -37,6 +37,20 @@ struct AegisView: View {
       }
       Divider()
       Text(agent.reply).font(.title3).frame(maxWidth: .infinity, alignment: .leading)
+      VStack(alignment: .leading, spacing: 4) {
+        Text("실행 단계").font(.caption.bold()).foregroundStyle(.secondary)
+        ForEach(agent.activitySteps.suffix(5), id: \.self) { step in
+          Text("• \(step)").font(.caption).foregroundStyle(.secondary)
+        }
+      }.frame(maxWidth: .infinity, alignment: .leading)
+      HStack {
+        Button("호출어 학습") { agent.collectWakeSample(label: "wake") }
+        Button("일반 음성 학습") { agent.collectWakeSample(label: "non_wake") }
+        Text(agent.sampleStatus).font(.caption).foregroundStyle(.secondary)
+      }
+      if agent.hasWakeCandidate {
+        Button("방금 감지는 오감지예요") { agent.reportFalseWake() }.font(.caption)
+      }
       if agent.listening {
         Text(agent.pendingKakaoMessage != nil ? (agent.heardText.isEmpty ? "카카오톡 전송 승인 대기 중…" : "인식: \(agent.heardText)") : agent.commandListening ? (agent.transcript.isEmpty ? "명령을 듣는 중…" : "명령: \(agent.transcript)") : "호출어 ‘에이제스’를 기다리는 중…")
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,16 +96,22 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   @Published var heardText = ""
   @Published var commandListening = false
   @Published var pendingKakaoMessage: KakaoMessage?
+  @Published var sampleStatus = ""
+  @Published var activitySteps = ["호출어 대기 중"]
+  @Published var hasWakeCandidate = false
   private let speaker = AVSpeechSynthesizer()
   private let speech = SpeechInput()
+  private let sampleRecorder = WakeSampleRecorder()
   private var commandActive = false
   private var wakeTranscript = ""
   private var wakeCheckInFlight = false
+  private var wakeCandidateURL: URL?
   private var lastWakeCheck = Date.distantPast
   private var lastCommandText = ""
   private var lastKakaoApprovalText = ""
   private var started = false
   private var silenceTimer: Timer?
+  private var speechRecoveryTimer: Timer?
   private let finishWords = ["답변해", "대답해", "응답해"]
   private let speechVolume: Float = 0.45
 
@@ -103,6 +123,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   func start() {
     guard !started else { return }
     started = true
+    LearningStore.bootstrap()
     SpeakerVerifier.start()
     let greeting = "안녕하세요. Aegis가 준비되었습니다. 무엇을 도와드릴까요?"
     reply = greeting
@@ -122,7 +143,11 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     wakeTranscript = ""
     wakeCheckInFlight = false
     lastCommandText = ""
-    speech.start(onUpdate: { [weak self] text, isFinal in
+    recordActivity("호출어 대기")
+    speech.start(onAudio: { [weak self] in
+      guard let self else { return }
+      self.checkWakeWord(self.heardText, recording: self.speech.wakeSnapshotURL())
+    }, onUpdate: { [weak self] text, isFinal in
       guard let self else { return }
       self.heardText = text
       self.handleSpeech(text)
@@ -133,13 +158,71 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     })
   }
 
+  private func startCommandListening() {
+    speech.stop()
+    transcript = ""
+    heardText = ""
+    listening = true
+    commandActive = true
+    commandListening = true
+    lastCommandText = ""
+    recordActivity("호출어 감지 · 명령 입력 대기")
+    speech.start(onAudio: {}, onUpdate: { [weak self] text, isFinal in
+      guard let self else { return }
+      self.heardText = text
+      self.handleSpeech(text)
+      if isFinal { self.handleFinalRecognition() }
+    }, onError: { [weak self] message in
+      self?.listening = false
+      self?.reply = message
+    })
+  }
+
+  func collectWakeSample(label: String) {
+    guard !busy else { return }
+    speech.stop()
+    listening = false
+    sampleStatus = label == "wake" ? "2.5초 동안 ‘에이제스’라고 말하세요." : "2.5초 동안 일반 문장을 말하세요."
+    sampleRecorder.capture(label: label) { [weak self] url in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        guard let url else { self.sampleStatus = "녹음에 실패했습니다."; return }
+        LearningStore.addWakeSample(path: url.path, label: label)
+        self.sampleStatus = label == "wake" ? "호출어 샘플을 저장했습니다." : "일반 음성 샘플을 저장했습니다."
+      }
+    }
+  }
+
+  func reportFalseWake() {
+    guard let wakeCandidateURL else { return }
+    LearningStore.addWakeSample(path: wakeCandidateURL.path, label: "non_wake")
+    self.wakeCandidateURL = nil
+    hasWakeCandidate = false
+    sampleStatus = "오감지 샘플을 일반 음성으로 저장했습니다."
+    speech.stop()
+    listening = false
+    commandActive = false
+    commandListening = false
+    recordActivity("오감지 샘플 저장")
+    startWakeListening()
+  }
+
+  private func saveWakeCandidate(from source: URL?) -> URL? {
+    guard let source else { return nil }
+    let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appending(path: "Aegis/wake-false-candidates")
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let destination = folder.appending(path: "\(UUID().uuidString).caf")
+    do { try FileManager.default.copyItem(at: source, to: destination); return destination } catch { return nil }
+  }
+
   private func handleSpeech(_ text: String) {
     let lowered = normalized(text)
     if pendingKakaoMessage != nil {
       waitForKakaoApproval(text)
       return
     }
-    guard commandActive else { return checkWakeWord(text) }
+    guard commandActive else { return checkWakeWord(text, recording: speech.wakeSnapshotURL()) }
     transcript = text.hasPrefix(wakeTranscript)
       ? String(text.dropFirst(wakeTranscript.count)).trimmingCharacters(in: .whitespacesAndNewlines)
       : text
@@ -153,20 +236,20 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     resetSilenceTimer()
   }
 
-  private func checkWakeWord(_ text: String) {
+  private func checkWakeWord(_ text: String, recording: URL?) {
     guard !wakeCheckInFlight, Date.now.timeIntervalSince(lastWakeCheck) > 0.7 else { return }
     wakeCheckInFlight = true
     lastWakeCheck = .now
-    let recording = speech.lastRecordingURL
     Task {
       let score = await WakeWordVerifier.score(for: recording)
       wakeCheckInFlight = false
-      guard !commandActive, let score, score >= 0.78 else { return }
-      commandActive = true
-      commandListening = true
-      wakeTranscript = text
-      speech.beginCommandRecording()
-      transcript = ""
+      let detected = score.map { $0 >= 0.60 } ?? false
+      LearningStore.recordWakeCheck(score: score, detected: detected)
+      guard !commandActive, detected else { return }
+      wakeCandidateURL = saveWakeCandidate(from: recording)
+      hasWakeCandidate = wakeCandidateURL != nil
+      NSSound.beep()
+      startCommandListening()
     }
   }
 
@@ -223,6 +306,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     guard !text.isEmpty else { return startWakeListening() }
     let recording = speech.lastRecordingURL
     busy = true
+    recordActivity("등록 화자 확인")
     Task {
       let score = await SpeakerVerifier.score(for: recording)
       busy = false
@@ -231,6 +315,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         startWakeListening()
         return
       }
+      recordActivity("음성 요청 분석")
       send(text)
     }
   }
@@ -242,6 +327,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       return
     }
     busy = true
+    recordActivity("로컬 AI 행동 계획 생성")
     Task {
       do {
         let plan = try await AgentPlanner.plan(for: text, memories: LearningMemory.recent())
@@ -255,6 +341,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   }
 
   private func execute(_ plan: AgentPlan, request: String) {
+    recordActivity("AI 선택: \(plan.action)")
     switch plan.action {
     case "kakao_message":
       guard let recipient = plan.recipient?.trimmingCharacters(in: .whitespacesAndNewlines), !recipient.isEmpty,
@@ -276,6 +363,15 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       let application = plan.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !application.isEmpty else { speak("닫을 앱을 이해하지 못했습니다. 다시 말씀해 주세요."); return }
       close(application, request: request)
+    case "browser_search":
+      let browser = plan.browser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let site = plan.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let query = plan.query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !browser.isEmpty, !site.isEmpty else {
+        speak("브라우저 검색 내용을 이해하지 못했습니다. 다시 말씀해 주세요.")
+        return
+      }
+      search(browser: browser, site: site, query: query, request: request)
     case "get_active_application":
       let result = MacTools.activeApplication()
       LearningMemory.record(request: request, action: plan.action, result: result)
@@ -323,6 +419,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   private func launch(_ application: String) {
     busy = true
+    recordActivity("\(application) 실행")
     Task {
       let message = await MacApplicationLauncher.open(application)
       busy = false
@@ -332,10 +429,22 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   private func close(_ application: String, request: String) {
     busy = true
+    recordActivity("\(application) 종료")
     Task {
       let result = await MacApplicationLauncher.close(application)
       busy = false
       LearningMemory.record(request: request, action: "close_application", result: result)
+      speak(result)
+    }
+  }
+
+  private func search(browser: String, site: String, query: String, request: String) {
+    busy = true
+    recordActivity("\(browser)에서 \(site) 검색")
+    Task {
+      let result = await BrowserTools.search(browser: browser, site: site, query: query)
+      busy = false
+      LearningMemory.record(request: request, action: "browser_search", result: result)
       speak(result)
     }
   }
@@ -347,10 +456,22 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     utterance.voice = AVSpeechSynthesisVoice(language: "ko-KR")
     utterance.volume = speechVolume
     speaker.speak(utterance)
+    speechRecoveryTimer?.invalidate()
+    speechRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+      self?.startWakeListening()
+    }
+  }
+
+  private func recordActivity(_ text: String) {
+    activitySteps.append("\(Date.now.formatted(date: .omitted, time: .shortened)) · \(text)")
+    if activitySteps.count > 20 { activitySteps.removeFirst(activitySteps.count - 20) }
   }
 
   nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-    Task { @MainActor in startWakeListening() }
+    Task { @MainActor in
+      speechRecoveryTimer?.invalidate()
+      startWakeListening()
+    }
   }
 }
 
@@ -382,7 +503,9 @@ enum MacApplicationLauncher {
     await Task.detached {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-      if let path = installedApplicationPath(named: application) {
+      if let bundleID = LearningStore.applicationBundleID(for: application) {
+        process.arguments = ["-b", bundleID]
+      } else if let path = installedApplicationPath(named: application) {
         process.arguments = [path]
       } else {
         process.arguments = ["-a", application]
@@ -399,8 +522,9 @@ enum MacApplicationLauncher {
 
   static func close(_ application: String) async -> String {
     await Task.detached {
-      guard let path = installedApplicationPath(named: application),
-            let bundleID = Bundle(url: URL(fileURLWithPath: path))?.bundleIdentifier,
+      let bundleID = LearningStore.applicationBundleID(for: application)
+        ?? installedApplicationPath(named: application).flatMap { Bundle(url: URL(fileURLWithPath: $0))?.bundleIdentifier }
+      guard let bundleID,
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
         return "\(application)은(는) 현재 실행 중이지 않습니다."
       }
@@ -438,10 +562,13 @@ final class SpeechInput: NSObject {
   private var sessionID = 0
   private var recordedFile: AVAudioFile?
   private var recordingFormat: AVAudioFormat?
+  private let wakeLock = NSLock()
+  private var wakeSamples = [Float]()
+  private var wakeSampleRate = 16_000.0
   private(set) var lastRecordingURL: URL?
   var listening = false
 
-  func start(onUpdate: @escaping (String, Bool) -> Void, onError: @escaping (String) -> Void) {
+  func start(onAudio: @escaping () -> Void, onUpdate: @escaping (String, Bool) -> Void, onError: @escaping (String) -> Void) {
     sessionID += 1
     let currentSessionID = sessionID
     SFSpeechRecognizer.requestAuthorization { [weak self] status in
@@ -452,7 +579,7 @@ final class SpeechInput: NSObject {
         guard granted else { return DispatchQueue.main.async { onError("마이크 권한을 허용해 주세요.") } }
         DispatchQueue.main.async {
           guard self?.sessionID == currentSessionID else { return }
-          self?.recognize(sessionID: currentSessionID, onUpdate: onUpdate, onError: onError)
+          self?.recognize(sessionID: currentSessionID, onAudio: onAudio, onUpdate: onUpdate, onError: onError)
         }
       }
     }
@@ -473,18 +600,54 @@ final class SpeechInput: NSObject {
     } catch { }
   }
 
-  private func recognize(sessionID: Int, onUpdate: @escaping (String, Bool) -> Void, onError: @escaping (String) -> Void) {
+  func wakeSnapshotURL() -> URL? {
+    wakeLock.lock()
+    let samples = wakeSamples
+    let sampleRate = wakeSampleRate
+    wakeLock.unlock()
+    guard !samples.isEmpty,
+          let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
+          let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
+    buffer.frameLength = AVAudioFrameCount(samples.count)
+    samples.withUnsafeBufferPointer { source in
+      buffer.floatChannelData?[0].update(from: source.baseAddress!, count: samples.count)
+    }
+    let url = FileManager.default.temporaryDirectory.appending(path: "aegis-wake-snapshot.caf")
+    do {
+      let file = try AVAudioFile(forWriting: url, settings: format.settings)
+      try file.write(from: buffer)
+      return url
+    } catch { return nil }
+  }
+
+  private func recognize(sessionID: Int, onAudio: @escaping () -> Void, onUpdate: @escaping (String, Bool) -> Void, onError: @escaping (String) -> Void) {
     request = SFSpeechAudioBufferRecognitionRequest()
     request?.shouldReportPartialResults = true
     guard let request, let recognizer, recognizer.isAvailable else { return onError("한국어 음성 인식 엔진을 사용할 수 없습니다.") }
     let input = engine.inputNode
     recordingFormat = input.outputFormat(forBus: 0)
+    wakeLock.lock(); wakeSamples = []; wakeSampleRate = recordingFormat?.sampleRate ?? 16_000; wakeLock.unlock()
     beginCommandRecording()
     guard recordedFile != nil else { return onError("음성 확인용 녹음을 시작하지 못했습니다.") }
     input.removeTap(onBus: 0)
+    var framesSinceWakeCheck: AVAudioFrameCount = 0
+    let wakeCheckFrames = AVAudioFrameCount(recordingFormat?.sampleRate ?? 16_000)
     input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buffer, _ in
       request.append(buffer)
       try? self?.recordedFile?.write(from: buffer)
+      if let channel = buffer.floatChannelData?[0] {
+        let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+        self?.wakeLock.lock()
+        self?.wakeSamples.append(contentsOf: samples)
+        let maximum = Int((self?.wakeSampleRate ?? 16_000) * 2)
+        if (self?.wakeSamples.count ?? 0) > maximum { self?.wakeSamples.removeFirst((self?.wakeSamples.count ?? 0) - maximum) }
+        self?.wakeLock.unlock()
+      }
+      framesSinceWakeCheck += buffer.frameLength
+      if framesSinceWakeCheck >= wakeCheckFrames {
+        framesSinceWakeCheck = 0
+        DispatchQueue.main.async { onAudio() }
+      }
     }
     engine.prepare()
     do { try engine.start(); listening = true } catch { return onError("마이크를 시작하지 못했습니다: \(error.localizedDescription)") }
@@ -587,10 +750,10 @@ enum Ollama {
     if let end = json.lastIndex(of: "}"),
        let data = String(json[...end]).data(using: .utf8),
        let plan = try? JSONDecoder().decode(AgentPlan.self, from: data),
-       ["kakao_message", "open_application", "close_application", "get_active_application", "answer"].contains(plan.action) {
+       ["kakao_message", "open_application", "close_application", "browser_search", "get_active_application", "answer"].contains(plan.action) {
       return plan
     }
-    return AgentPlan(action: "unknown", recipient: nil, body: nil, application: nil, answer: nil)
+    return AgentPlan(action: "unknown", recipient: nil, body: nil, application: nil, browser: nil, site: nil, query: nil, answer: nil)
   }
 
   static func kakaoDecision(_ text: String, message: KakaoMessage) async throws -> String {
