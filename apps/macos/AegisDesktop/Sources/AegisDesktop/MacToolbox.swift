@@ -2,12 +2,18 @@ import AppKit
 import Foundation
 
 struct PendingMacAction: Identifiable {
-  let id = UUID()
+  let id: UUID
   let kind: String
   let title: String
   let detail: String
   let request: String
   let arguments: [String: String]
+
+  init(id: UUID = UUID(), kind: String, title: String, detail: String,
+       request: String, arguments: [String: String]) {
+    self.id = id; self.kind = kind; self.title = title; self.detail = detail
+    self.request = request; self.arguments = arguments
+  }
 }
 
 enum MacToolbox {

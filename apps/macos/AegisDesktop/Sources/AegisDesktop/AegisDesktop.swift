@@ -22,85 +22,32 @@ struct AegisDesktopApp: App {
 
 struct AegisView: View {
   @ObservedObject var agent: AegisAgent
-  @State private var message = ""
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
+    VStack(spacing: 0) {
       HStack {
         VStack(alignment: .leading) {
           Text("AEGIS").font(.title.bold())
-          Text("LOCAL MAC INTELLIGENCE").font(.caption).foregroundStyle(.secondary)
+          Text("TEXT CHAT · LOCAL MAC INTELLIGENCE").font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Label(agent.listening ? "듣는 중" : agent.busy ? "생각 중" : "준비됨", systemImage: agent.listening ? "waveform" : "circle.fill")
-          .foregroundStyle(agent.listening ? .cyan : .green)
-      }
-      Divider()
-      Text(agent.reply).font(.title3).frame(maxWidth: .infinity, alignment: .leading)
-      VStack(alignment: .leading, spacing: 4) {
-        Text("실행 단계").font(.caption.bold()).foregroundStyle(.secondary)
-        ForEach(agent.activitySteps.suffix(5), id: \.self) { step in
-          Text("• \(step)").font(.caption).foregroundStyle(.secondary)
-        }
-      }.frame(maxWidth: .infinity, alignment: .leading)
-      HStack {
-        Button("호출어 학습") { agent.collectWakeSample(label: "wake") }
-        Button("일반 음성 학습") { agent.collectWakeSample(label: "non_wake") }
-        Text(agent.sampleStatus).font(.caption).foregroundStyle(.secondary)
-      }
-      if agent.hasWakeCandidate {
-        Button("방금 감지는 오감지예요") { agent.reportFalseWake() }.font(.caption)
-      }
-      if agent.listening {
-        Text(agent.pendingKakaoMessage != nil ? (agent.heardText.isEmpty ? "카카오톡 전송 승인 대기 중…" : "인식: \(agent.heardText)") : agent.commandListening ? (agent.transcript.isEmpty ? "명령을 듣는 중…" : "명령: \(agent.transcript)") : "호출어 ‘에이제스’를 기다리는 중…")
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(12).background(.cyan.opacity(0.12)).clipShape(.rect(cornerRadius: 8))
-        Text(agent.pendingKakaoMessage != nil ? "‘전송해’, ‘응’, ‘좋아’, ‘취소’처럼 말씀하세요." : agent.commandListening ? "명령을 듣는 중 · 2초간 말이 없으면 자동 전송합니다." : "‘에이제스’라고 부른 뒤 요청을 말씀해 주세요.")
-          .font(.caption).foregroundStyle(.secondary)
-      }
-      if let message = agent.pendingKakaoMessage {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("카카오톡 전송 확인").font(.headline)
-          Text("받는 사람: \(message.recipient)")
-          Text("내용: \(message.body)")
-          Text("‘전송해’ 또는 ‘취소’라고 말하거나 버튼을 누르세요.").font(.caption).foregroundStyle(.secondary)
-          HStack {
-            Button("전송") { agent.confirmKakaoMessage() }.buttonStyle(.borderedProminent)
-            Button("취소") { agent.cancelKakaoMessage() }
-          }
-        }
-        .padding(12).background(.orange.opacity(0.14)).clipShape(.rect(cornerRadius: 8))
-      }
-      if let action = agent.pendingMacAction {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("실행 승인").font(.headline)
-          Text(action.title)
-          Text(action.detail).font(.caption).foregroundStyle(.secondary)
-          HStack {
-            Button("실행") { agent.confirmMacAction() }.buttonStyle(.borderedProminent)
-            Button("취소") { agent.cancelMacAction() }
-          }
-        }
-        .padding(12).background(.orange.opacity(0.14)).clipShape(.rect(cornerRadius: 8))
-      }
-      Spacer()
-      HStack {
-        TextField("Aegis에게 요청", text: $message)
-          .onSubmit { agent.send(message); message = "" }
-        Button("전송") { agent.send(message); message = "" }
-          .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || agent.busy)
-        Button(agent.listening ? "음성 대기 중" : "음성 활성화") { agent.startWakeListening() }
-          .disabled(agent.busy)
+        Label(agent.busy ? "처리 중" : "준비됨", systemImage: "circle.fill")
+          .foregroundStyle(agent.busy ? .orange : .green)
         Button("종료") { NSApplication.shared.terminate(nil) }
       }
-      Text(agent.busy ? "생각 중…" : agent.listening ? "말씀하세요" : "Ollama 로컬 연결")
-        .font(.caption).foregroundStyle(.secondary)
-    }.padding()
+      .padding()
+      Divider()
+      ChatView(store: agent.chat, busy: agent.busy, submit: agent.send,
+        approve: agent.approveChatAction, reject: agent.rejectChatAction)
+    }
   }
 }
 
 @MainActor
 final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+  let voiceInputEnabled = false
+  let chat = ChatStore()
+  private let memoryStore = MemoryStore()
   @Published var reply = "Aegis가 준비되었습니다."
   @Published var busy = false
   @Published var listening = false
@@ -122,6 +69,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   private var lastWakeCheck = Date.distantPast
   private var lastCommandText = ""
   private var lastKakaoApprovalText = ""
+  private var pendingKakaoApprovalID: UUID?
+  private var planExecutor: AgentPlanExecutor?
+  private var executingStepID: UUID?
   private var started = false
   private var silenceTimer: Timer?
   private var speechRecoveryTimer: Timer?
@@ -137,16 +87,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     guard !started else { return }
     started = true
     LearningStore.bootstrap()
-    SpeakerVerifier.start()
-    let greeting = "안녕하세요. Aegis가 준비되었습니다. 무엇을 도와드릴까요?"
-    reply = greeting
-    let utterance = AVSpeechUtterance(string: greeting)
-    utterance.voice = AVSpeechSynthesisVoice(language: "ko-KR")
-    utterance.volume = speechVolume
-    speaker.speak(utterance)
   }
 
   func startWakeListening() {
+    guard voiceInputEnabled else { return }
     guard !listening, !busy else { return }
     transcript = ""
     heardText = ""
@@ -192,6 +136,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   }
 
   func collectWakeSample(label: String) {
+    guard voiceInputEnabled else {
+      sampleStatus = "음성 입력이 꺼져 있습니다."
+      return
+    }
     guard !busy else { return }
     speech.stop()
     listening = false
@@ -334,89 +282,237 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   }
 
   func send(_ text: String) {
-    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !message.isEmpty else { return }
+    chat.append(.user, message)
+    if let memoryIntent = MemoryIntentParser.parse(message) {
+      let result = memoryStore.handle(memoryIntent)
+      speak(result, role: result.hasPrefix("메모리 저장소 오류") ? .error : .assistant)
+      return
+    }
     if pendingKakaoMessage != nil {
-      interpretKakaoApproval(text)
+      interpretKakaoApproval(message)
       return
     }
     if pendingMacAction != nil {
-      interpretMacApproval(text)
+      interpretMacApproval(message)
       return
     }
     busy = true
     recordActivity("로컬 AI 행동 계획 생성")
     Task {
       do {
-        let plan = try await AgentPlanner.plan(for: text, memories: LearningMemory.recent())
+        let memory = MemoryRetriever.relevant(to: message, repository: memoryStore.repository)
+        let plan = try await AgentPlanner.plan(for: message, memory: memory)
         busy = false
-        execute(plan, request: text)
+        execute(plan, request: message)
       } catch {
         busy = false
-        speak("로컬 AI 연결에 실패했습니다. 다시 말씀해 주세요.")
+        speak(error.localizedDescription, role: .error)
       }
     }
   }
 
   private func execute(_ plan: AgentPlan, request: String) {
-    recordActivity("AI 선택: \(plan.action)")
-    switch plan.action {
-    case "kakao_message":
-      guard let recipient = plan.recipient?.trimmingCharacters(in: .whitespacesAndNewlines), !recipient.isEmpty,
-            let body = plan.body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else {
-        speak("받는 사람이나 보낼 내용을 이해하지 못했습니다. 다시 말씀해 주세요.")
-        LearningMemory.record(request: request, action: plan.action, result: "정보 부족")
-        return
-      }
-      pendingKakaoMessage = KakaoMessage(recipient: recipient, body: body)
-      reply = "카카오톡 전송 내용을 확인해 주세요."
-      LearningMemory.record(request: request, action: plan.action, result: "승인 대기")
-      startWakeListening()
-    case "open_application":
-      let application = plan.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      guard !application.isEmpty else { speak("열 앱을 이해하지 못했습니다. 다시 말씀해 주세요."); return }
-      requestApproval(kind: plan.action, title: "\(application) 실행", detail: "앱을 열고 화면 앞으로 가져옵니다.", request: request, arguments: ["application": application])
-    case "close_application":
-      let application = plan.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      guard !application.isEmpty else { speak("닫을 앱을 이해하지 못했습니다. 다시 말씀해 주세요."); return }
-      requestApproval(kind: plan.action, title: "\(application) 종료", detail: "저장하지 않은 작업이 영향을 받을 수 있습니다.", request: request, arguments: ["application": application])
-    case "browser_search":
-      let browser = plan.browser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      let site = plan.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      let query = plan.query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      guard !browser.isEmpty, !site.isEmpty else {
-        speak("브라우저 검색 내용을 이해하지 못했습니다. 다시 말씀해 주세요.")
-        return
-      }
-      requestApproval(kind: plan.action, title: "브라우저 검색", detail: "\(browser)에서 \(site) · \(query)", request: request, arguments: ["browser": browser, "site": site, "query": query])
-    case "get_active_application":
-      let result = MacTools.activeApplication()
-      LearningMemory.record(request: request, action: plan.action, result: result)
-      speak(result)
-    case "get_system_status":
-      finishReadTool(MacToolbox.systemStatus(), action: plan.action, request: request)
-    case "list_running_applications":
-      finishReadTool(MacToolbox.runningApplications(), action: plan.action, request: request)
-    case "get_clipboard":
-      finishReadTool(MacToolbox.clipboardText(), action: plan.action, request: request)
-    case "set_clipboard":
-      let content = plan.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      guard !content.isEmpty else { speak("클립보드에 저장할 내용을 이해하지 못했습니다."); return }
-      requestApproval(kind: plan.action, title: "클립보드 변경", detail: String(content.prefix(300)), request: request, arguments: ["content": content])
-    default:
-      let answer = plan.answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "요청을 이해하지 못했습니다."
-      LearningMemory.record(request: request, action: "answer", result: answer)
-      speak(answer)
+    do {
+      planExecutor = try AgentPlanExecutor(plan: plan, request: request)
+      busy = true
+      advancePlan()
+    } catch {
+      busy = false
+      speak(error.localizedDescription, role: .error)
     }
   }
 
-  private func finishReadTool(_ result: String, action: String, request: String) {
-    LearningMemory.record(request: request, action: action, result: result)
-    speak(result)
+  private func advancePlan() {
+    guard var executor = planExecutor else { return }
+    let decision = executor.next()
+    planExecutor = executor
+    switch decision {
+    case .execute(let step, let index, let total):
+      executingStepID = step.id
+      chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 실행 중…")
+      execute(step, request: executor.state.request)
+    case .approval(let step, let index, let total):
+      executingStepID = step.id
+      requestStepApproval(step, request: executor.state.request, progress: "\(index)/\(total)")
+    case .skipped(let step, let index, let total):
+      chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 건너뜀 · 이전 필수 단계 실패")
+      advancePlan()
+    case .finished(let answer):
+      if let answer, !answer.isEmpty { speak(answer) }
+      planExecutor = nil; executingStepID = nil; busy = false
+    }
   }
 
-  private func requestApproval(kind: String, title: String, detail: String, request: String, arguments: [String: String]) {
-    pendingMacAction = PendingMacAction(kind: kind, title: title, detail: detail, request: request, arguments: arguments)
-    reply = "실행 전에 내용을 확인해 주세요."
+  private func execute(_ step: AgentStep, request: String) {
+    let action = step.action.rawValue
+    recordActivity("AI 선택: \(action)")
+    switch step.action {
+    case .kakaoMessage:
+      guard let recipient = step.recipient?.trimmingCharacters(in: .whitespacesAndNewlines), !recipient.isEmpty,
+            let body = step.body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else {
+        failCurrentStep("받는 사람이나 보낼 내용을 이해하지 못했습니다.")
+        return
+      }
+      sendKakao(KakaoMessage(recipient: recipient, body: body), request: request)
+    case .openApplication:
+      let application = step.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !application.isEmpty else { failCurrentStep("열 앱을 이해하지 못했습니다."); return }
+      if let project = step.project { openRememberedProject(project, request: request) }
+      else { launch(application, request: request) }
+    case .closeApplication:
+      let application = step.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !application.isEmpty else { failCurrentStep("닫을 앱을 이해하지 못했습니다."); return }
+      close(application, request: request)
+    case .browserSearch:
+      let browser = step.browser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let site = step.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let query = step.query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !site.isEmpty else {
+        failCurrentStep("브라우저 검색 내용을 이해하지 못했습니다.")
+        return
+      }
+      let selectedBrowser = browser.isEmpty ? "Safari" : browser
+      search(browser: selectedBrowser, site: site, query: query, request: request)
+    case .getActiveApplication:
+      let result = MacTools.activeApplication()
+      finishReadTool(result, action: action, request: request)
+    case .getSystemStatus:
+      finishReadTool(MacToolbox.systemStatus(), action: action, request: request)
+    case .listRunningApplications:
+      finishReadTool(MacToolbox.runningApplications(), action: action, request: request)
+    case .getClipboard:
+      finishReadTool(MacToolbox.clipboardText(), action: action, request: request)
+    case .getServerStatus:
+      runServerTool(.status, request: request)
+    case .getDockerContainers:
+      runServerTool(.containers, request: request)
+    case .getDockerLogs:
+      let container = step.container?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !container.isEmpty else { failCurrentStep("확인할 컨테이너 이름이 필요합니다."); return }
+      runServerTool(.logs, request: request, arguments: ["container": container, "lines": step.lines ?? 100])
+    case .getServerProjectStatus:
+      let project = step.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !project.isEmpty else { failCurrentStep("확인할 서버 프로젝트가 필요합니다."); return }
+      runServerTool(.projectStatus, request: request, arguments: ["project": project])
+    case .getRememberedProjectStatus:
+      let project = step.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !project.isEmpty else { failCurrentStep("확인할 프로젝트가 필요합니다."); return }
+      runRememberedProjectStatus(project, request: request)
+    case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
+      let container = step.container?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !container.isEmpty else { failCurrentStep("변경할 컨테이너 이름이 필요합니다."); return }
+      let operation = action.replacingOccurrences(of: "_docker_container", with: "")
+      guard let tool = ServerTool(rawValue: operation) else { failCurrentStep("지원하지 않는 서버 작업입니다."); return }
+      runServerTool(tool, request: request, arguments: ["container": container], approved: true)
+    case .setClipboard:
+      let content = step.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !content.isEmpty else { failCurrentStep("클립보드에 저장할 내용을 이해하지 못했습니다."); return }
+      finishReadTool(MacToolbox.setClipboard(content), action: action, request: request, target: "clipboard")
+    default:
+      failCurrentStep("지원하지 않는 실행 단계입니다.")
+    }
+  }
+
+  private func finishReadTool(_ result: String, action: String, request: String, target: String = "") {
+    LearningMemory.record(request: request, action: action, result: result)
+    memoryStore.recordAction(request: request, action: action, target: target,
+      result: result, succeeded: resultSucceeded(result))
+    speak(result)
+    completeCurrentStep(succeeded: resultSucceeded(result))
+  }
+
+  private func runServerTool(_ tool: ServerTool, request: String, arguments: [String: Any] = [:], approved: Bool = false) {
+    guard tool.requiresApproval == approved else {
+      speak("승인 상태가 올바르지 않아 서버 작업을 실행하지 않았습니다.")
+      return
+    }
+    busy = true
+    recordActivity("sol-server · \(tool.rawValue)")
+    Task {
+      do {
+        let result = try await ServerAgentClient.call(tool, arguments: arguments)
+        busy = false
+        let target = arguments["container"] as? String ?? arguments["project"] as? String ?? "sol-server"
+        finishReadTool(result, action: tool.rawValue, request: request, target: target)
+      } catch {
+        let target = arguments["container"] as? String ?? arguments["project"] as? String ?? "sol-server"
+        memoryStore.recordAction(request: request, action: tool.rawValue, target: target,
+          result: error.localizedDescription, succeeded: false)
+        speak(error.localizedDescription, role: .error)
+        completeCurrentStep(succeeded: false)
+      }
+    }
+  }
+
+  private func runRememberedProjectStatus(_ project: String, request: String) {
+    busy = true
+    Task {
+      do {
+        let result = try MemoryProjectTool.status(project: project, repository: memoryStore.repository)
+        busy = false
+        finishReadTool(result, action: AgentAction.getRememberedProjectStatus.rawValue,
+          request: request, target: project)
+      } catch {
+        memoryStore.recordAction(request: request, action: AgentAction.getRememberedProjectStatus.rawValue,
+          target: project, result: error.localizedDescription, succeeded: false)
+        speak(error.localizedDescription, role: .error)
+        completeCurrentStep(succeeded: false)
+      }
+    }
+  }
+
+  private func requestStepApproval(_ step: AgentStep, request: String, progress: String) {
+    let title: String
+    let detail: String
+    var arguments: [String: String] = [:]
+    switch step.action {
+    case .kakaoMessage:
+      title = "\(step.recipient ?? "")에게 카카오톡 전송"
+      detail = step.body ?? ""
+    case .openApplication:
+      title = step.project.map { "\($0) 프로젝트 열기" } ?? "\(step.application ?? "") 실행"
+      detail = "앱 또는 프로젝트를 열고 화면 앞으로 가져옵니다."
+    case .closeApplication:
+      title = "\(step.application ?? "") 종료"; detail = "저장하지 않은 작업이 영향을 받을 수 있습니다."
+    case .browserSearch:
+      title = "브라우저 검색"; detail = "\(step.browser ?? "Safari")에서 \(step.site ?? "") · \(step.query ?? "")"
+    case .setClipboard:
+      title = "클립보드 변경"; detail = String((step.content ?? "").prefix(300))
+    case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
+      let operation = step.action.rawValue.replacingOccurrences(of: "_docker_container", with: "")
+      title = "\(step.container ?? "") 컨테이너 \(serverActionLabel(operation))"
+      detail = "sol-server에서 Docker \(operation) 작업을 실행합니다."
+    default:
+      failCurrentStep("승인이 필요하지 않은 단계입니다."); return
+    }
+    arguments["progress"] = progress
+    requestApproval(id: step.id, kind: step.action.rawValue, title: "\(progress) \(title)",
+      detail: detail, request: request, arguments: arguments)
+  }
+
+  private func completeCurrentStep(succeeded: Bool) {
+    guard let id = executingStepID, var executor = planExecutor else { return }
+    let position = executor.state.index + 1
+    let total = executor.state.plan.steps.count
+    guard executor.complete(id, succeeded: succeeded) else { return }
+    planExecutor = executor
+    chat.append(.system, "\(position)/\(total) \(succeeded ? "완료" : "실패")")
+    advancePlan()
+  }
+
+  private func failCurrentStep(_ message: String) {
+    speak(message, role: .error)
+    completeCurrentStep(succeeded: false)
+  }
+
+  private func requestApproval(id: UUID = UUID(), kind: String, title: String, detail: String,
+                               request: String, arguments: [String: String]) {
+    let action = PendingMacAction(id: id, kind: kind, title: title, detail: detail,
+      request: request, arguments: arguments)
+    pendingMacAction = action
+    chat.appendApproval(id: action.id, content: "\(title)\n\(detail)")
     LearningMemory.record(request: request, action: kind, result: "승인 대기")
     startWakeListening()
   }
@@ -431,23 +527,38 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func confirmMacAction() {
     guard let action = pendingMacAction else { return }
+    chat.resolveApproval(id: action.id, state: .approved)
+    chat.append(.system, "작업을 승인했습니다. 실행 결과를 기다리는 중입니다.")
     pendingMacAction = nil
-    switch action.kind {
-    case "open_application": launch(action.arguments["application"] ?? "")
-    case "close_application": close(action.arguments["application"] ?? "", request: action.request)
-    case "browser_search":
-      search(browser: action.arguments["browser"] ?? "Safari", site: action.arguments["site"] ?? "Google", query: action.arguments["query"] ?? "", request: action.request)
-    case "set_clipboard":
-      finishReadTool(MacToolbox.setClipboard(action.arguments["content"] ?? ""), action: action.kind, request: action.request)
-    default: speak("지원하지 않는 승인 작업입니다.")
+    guard planExecutor?.approve(action.id) == true else {
+      failCurrentStep("승인할 실행 단계를 찾지 못했습니다.")
+      return
     }
+    advancePlan()
   }
 
   func cancelMacAction() {
-    let kind = pendingMacAction?.kind ?? "unknown"
+    guard let action = pendingMacAction else { return }
+    let kind = action.kind
+    chat.resolveApproval(id: action.id, state: .rejected)
     pendingMacAction = nil
     LearningMemory.record(request: "사용자 취소", action: kind, result: "취소")
-    speak("작업을 취소했습니다.")
+    chat.append(.system, "작업을 거절했습니다. Server Agent나 Mac 도구를 호출하지 않았습니다.")
+    if planExecutor?.reject(action.id) == true { advancePlan() }
+  }
+
+  func approveChatAction(_ id: UUID) {
+    if pendingMacAction?.id == id { confirmMacAction(); return }
+    if pendingKakaoApprovalID == id { confirmKakaoMessage() }
+  }
+
+  func rejectChatAction(_ id: UUID) {
+    if pendingMacAction?.id == id { cancelMacAction(); return }
+    if pendingKakaoApprovalID == id { cancelKakaoMessage() }
+  }
+
+  private func serverActionLabel(_ operation: String) -> String {
+    ["start": "시작", "stop": "중지", "restart": "재시작"][operation] ?? "변경"
   }
 
   private func interpretKakaoApproval(_ text: String) {
@@ -468,29 +579,51 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func confirmKakaoMessage() {
     guard let message = pendingKakaoMessage else { return }
+    if let id = pendingKakaoApprovalID { chat.resolveApproval(id: id, state: .approved) }
+    pendingKakaoApprovalID = nil
+    chat.append(.system, "카카오톡 전송을 승인했습니다. 결과를 기다리는 중입니다.")
     pendingKakaoMessage = nil
     busy = true
     Task {
       let result = await KakaoTalkAutomation.send(message)
       busy = false
-      LearningMemory.record(request: "카카오톡 \(message.recipient)에게 \(message.body)", action: "kakao_message", result: result)
+      let request = "카카오톡 \(message.recipient)에게 \(message.body)"
+      LearningMemory.record(request: request, action: "kakao_message", result: result)
+      memoryStore.recordAction(request: request, action: "kakao_message", target: message.recipient,
+        result: result, succeeded: resultSucceeded(result))
       speak(result)
     }
   }
 
-  func cancelKakaoMessage() {
-    pendingKakaoMessage = nil
-    reply = "카카오톡 전송을 취소했습니다."
-    startWakeListening()
+  private func sendKakao(_ message: KakaoMessage, request: String) {
+    Task {
+      let result = await KakaoTalkAutomation.send(message)
+      LearningMemory.record(request: request, action: "kakao_message", result: result)
+      memoryStore.recordAction(request: request, action: "kakao_message", target: message.recipient,
+        result: result, succeeded: resultSucceeded(result))
+      speak(result)
+      completeCurrentStep(succeeded: resultSucceeded(result))
+    }
   }
 
-  private func launch(_ application: String) {
+  func cancelKakaoMessage() {
+    if let id = pendingKakaoApprovalID { chat.resolveApproval(id: id, state: .rejected) }
+    pendingKakaoApprovalID = nil
+    pendingKakaoMessage = nil
+    chat.append(.system, "카카오톡 전송을 거절했습니다. 메시지를 보내지 않았습니다.")
+  }
+
+  private func launch(_ application: String, request: String) {
     busy = true
     recordActivity("\(application) 실행")
     Task {
       let message = await MacApplicationLauncher.open(application)
       busy = false
+      LearningMemory.record(request: request, action: "open_application", result: message)
+      memoryStore.recordAction(request: request, action: "open_application", target: application,
+        result: message, succeeded: resultSucceeded(message))
       speak(message)
+      completeCurrentStep(succeeded: resultSucceeded(message))
     }
   }
 
@@ -501,7 +634,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       let result = await MacApplicationLauncher.close(application)
       busy = false
       LearningMemory.record(request: request, action: "close_application", result: result)
+      memoryStore.recordAction(request: request, action: "close_application", target: application,
+        result: result, succeeded: resultSucceeded(result))
       speak(result)
+      completeCurrentStep(succeeded: resultSucceeded(result))
     }
   }
 
@@ -512,21 +648,38 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       let result = await BrowserTools.search(browser: browser, site: site, query: query)
       busy = false
       LearningMemory.record(request: request, action: "browser_search", result: result)
+      memoryStore.recordAction(request: request, action: "browser_search", target: "\(browser):\(site)",
+        result: result, succeeded: resultSucceeded(result))
       speak(result)
+      completeCurrentStep(succeeded: resultSucceeded(result))
     }
   }
 
-  private func speak(_ text: String) {
+  private func openRememberedProject(_ project: String, request: String) {
+    do {
+      guard let memory = try memoryStore.repository.find(type: .project, key: project) else {
+        throw MemoryProjectError.unknownProject(project)
+      }
+      let url = URL(fileURLWithPath: memory.value).standardizedFileURL
+      guard memory.value.hasPrefix("/"), FileManager.default.fileExists(atPath: url.path) else {
+        throw MemoryProjectError.invalidPath(memory.value)
+      }
+      let succeeded = NSWorkspace.shared.open(url)
+      let result = succeeded ? "\(project) 프로젝트를 열었습니다." : "\(project) 프로젝트를 열지 못했습니다."
+      memoryStore.recordAction(request: request, action: "open_application", target: project,
+        result: result, succeeded: succeeded)
+      speak(result)
+      completeCurrentStep(succeeded: succeeded)
+    } catch { failCurrentStep(error.localizedDescription) }
+  }
+
+  private func speak(_ text: String, role: ChatRole = .assistant) {
     reply = text
-    speaker.stopSpeaking(at: .immediate)
-    let utterance = AVSpeechUtterance(string: text)
-    utterance.voice = AVSpeechSynthesisVoice(language: "ko-KR")
-    utterance.volume = speechVolume
-    speaker.speak(utterance)
-    speechRecoveryTimer?.invalidate()
-    speechRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
-      self?.startWakeListening()
-    }
+    chat.append(role, text)
+  }
+
+  private func resultSucceeded(_ result: String) -> Bool {
+    !["실패", "못했습니다", "오류", "필요합니다", "찾지 못"].contains(where: result.contains)
   }
 
   private func recordActivity(_ text: String) {
@@ -817,10 +970,10 @@ enum Ollama {
     if let end = json.lastIndex(of: "}"),
        let data = String(json[...end]).data(using: .utf8),
        let plan = try? JSONDecoder().decode(AgentPlan.self, from: data),
-       ["kakao_message", "open_application", "close_application", "browser_search", "get_active_application", "answer"].contains(plan.action) {
+       plan.steps.allSatisfy({ $0.action != .unknown }) {
       return plan
     }
-    return AgentPlan(action: "unknown", recipient: nil, body: nil, application: nil, browser: nil, site: nil, query: nil, content: nil, answer: nil)
+    return AgentPlan(step: AgentStep(action: .unknown))
   }
 
   static func kakaoDecision(_ text: String, message: KakaoMessage) async throws -> String {
