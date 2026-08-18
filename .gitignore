@@ -1,5 +1,9 @@
-node_modules
-.next
+node_modules/
+.next/
 .env
 .env.local
 npm-debug.log*
+.aegis/f5-tts/
+apps/macos/AegisDesktop/.build/
+__pycache__/
+*.pyc

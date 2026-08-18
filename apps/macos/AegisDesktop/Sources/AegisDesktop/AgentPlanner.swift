@@ -8,6 +8,7 @@ struct AgentPlan: Codable {
   let browser: String?
   let site: String?
   let query: String?
+  let content: String?
   let answer: String?
 }
 
@@ -16,7 +17,9 @@ enum AgentPlanner {
     let examples = memories.map { "요청: \($0.request) | 행동: \($0.action) | 결과: \($0.result)" }.joined(separator: "\n")
     let system = """
     당신은 Aegis의 행동 계획 AI다. 사용자의 자연스러운 한국어 요청을 분석해 JSON만 답한다.
-    action은 kakao_message, open_application, close_application, browser_search, get_active_application, answer 중 하나다.
+    현재 사용할 수 있는 기능은 앱 실행·종료, 활성 앱 확인, 실행 중인 앱 목록, Mac 시스템 상태, 브라우저 검색, 클립보드 읽기·저장, 카카오톡 메시지 전송이다.
+    사용자가 Aegis의 기능, 능력, 할 수 있는 일을 물으면 action=answer를 선택하고 현재 기능과 승인 원칙을 answer에 자연스럽게 설명한다.
+    action은 kakao_message, open_application, close_application, browser_search, get_active_application, get_system_status, list_running_applications, get_clipboard, set_clipboard, answer 중 하나다.
     카카오톡 메시지는 recipient와 body를 채운다. 표현 방식에 관계없이 전송 의도를 이해한다.
     사용자가 카카오톡·채팅방·상대방에게 메시지를 보내거나 전송해 달라고 하면 설명하지 말고 반드시 kakao_message를 선택한다.
     앱 실행은 application을 채운다. 그 외에는 answer에 자연스러운 한국어 답을 넣는다.
@@ -34,18 +37,22 @@ enum AgentPlanner {
     검색할 주제가 문장에 없고 사이트만 열라는 의도라면 query는 빈 문자열이다. 그 외에 query를 추측해서 채우지 않는다.
     “Firefox에서 YouTube 검색”, “브라우저 켜서 유튜브 검색”처럼 앱 열기와 검색이 함께 있으면 open_application이 아니라 반드시 browser_search를 선택한다.
     현재 어떤 앱을 쓰는지, 활성 앱이 무엇인지 묻는 요청은 get_active_application을 선택한다.
+    Mac 상태나 운영체제, 메모리, 가동 시간을 물으면 get_system_status를 선택한다.
+    실행 중인 앱 전체를 물으면 list_running_applications를 선택한다.
+    클립보드 내용을 읽어 달라면 get_clipboard를 선택한다. 클립보드에 텍스트를 복사하거나 저장해 달라면 set_clipboard를 선택하고 content를 채운다.
     실행 방법을 설명하지 말고 사용자의 의도를 우선한다. 모르는 값은 빈 문자열로 둔다.
     """
     let schema: [String: Any] = [
       "type": "object",
       "properties": [
-        "action": ["type": "string", "enum": ["kakao_message", "open_application", "close_application", "browser_search", "get_active_application", "answer"]],
+        "action": ["type": "string", "enum": ["kakao_message", "open_application", "close_application", "browser_search", "get_active_application", "get_system_status", "list_running_applications", "get_clipboard", "set_clipboard", "answer"]],
         "recipient": ["type": "string", "description": "카카오톡 받는 사람 또는 채팅방 이름"],
         "body": ["type": "string", "description": "카카오톡으로 보낼 원문 메시지"],
         "application": ["type": "string", "description": "열거나 닫을 macOS 앱 이름"],
         "browser": ["type": "string", "description": "browser_search에서만 쓸 브라우저 앱 이름. 언급이 없으면 빈 문자열"],
         "site": ["type": "string", "description": "browser_search에서만 쓸 검색 서비스. 유튜브면 YouTube, 일반 웹 검색은 Google"],
         "query": ["type": "string", "description": "browser_search에서 사용자가 실제로 찾으려는 주제만. 앱/사이트 이름을 넣지 말 것"],
+        "content": ["type": "string", "description": "set_clipboard에서 저장할 원문 텍스트"],
         "answer": ["type": "string", "description": "도구 실행이 필요 없는 자연스러운 한국어 답"],
       ],
       "required": ["action"],
@@ -69,6 +76,8 @@ enum AgentPlanner {
     if ["open_application", "close_application"].contains(plan.action) { return plan.application?.isEmpty != false }
     if plan.action == "browser_search" { return plan.browser?.isEmpty != false || plan.site?.isEmpty != false }
     if plan.action == "get_active_application" { return false }
+    if ["get_system_status", "list_running_applications", "get_clipboard"].contains(plan.action) { return false }
+    if plan.action == "set_clipboard" { return plan.content?.isEmpty != false }
     return plan.action != "answer" || plan.answer?.isEmpty != false
   }
 

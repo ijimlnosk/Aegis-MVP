@@ -71,6 +71,18 @@ struct AegisView: View {
         }
         .padding(12).background(.orange.opacity(0.14)).clipShape(.rect(cornerRadius: 8))
       }
+      if let action = agent.pendingMacAction {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("실행 승인").font(.headline)
+          Text(action.title)
+          Text(action.detail).font(.caption).foregroundStyle(.secondary)
+          HStack {
+            Button("실행") { agent.confirmMacAction() }.buttonStyle(.borderedProminent)
+            Button("취소") { agent.cancelMacAction() }
+          }
+        }
+        .padding(12).background(.orange.opacity(0.14)).clipShape(.rect(cornerRadius: 8))
+      }
       Spacer()
       HStack {
         TextField("Aegis에게 요청", text: $message)
@@ -96,6 +108,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   @Published var heardText = ""
   @Published var commandListening = false
   @Published var pendingKakaoMessage: KakaoMessage?
+  @Published var pendingMacAction: PendingMacAction?
   @Published var sampleStatus = ""
   @Published var activitySteps = ["호출어 대기 중"]
   @Published var hasWakeCandidate = false
@@ -326,6 +339,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       interpretKakaoApproval(text)
       return
     }
+    if pendingMacAction != nil {
+      interpretMacApproval(text)
+      return
+    }
     busy = true
     recordActivity("로컬 AI 행동 계획 생성")
     Task {
@@ -357,12 +374,11 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     case "open_application":
       let application = plan.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !application.isEmpty else { speak("열 앱을 이해하지 못했습니다. 다시 말씀해 주세요."); return }
-      LearningMemory.record(request: request, action: plan.action, result: application)
-      launch(application)
+      requestApproval(kind: plan.action, title: "\(application) 실행", detail: "앱을 열고 화면 앞으로 가져옵니다.", request: request, arguments: ["application": application])
     case "close_application":
       let application = plan.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !application.isEmpty else { speak("닫을 앱을 이해하지 못했습니다. 다시 말씀해 주세요."); return }
-      close(application, request: request)
+      requestApproval(kind: plan.action, title: "\(application) 종료", detail: "저장하지 않은 작업이 영향을 받을 수 있습니다.", request: request, arguments: ["application": application])
     case "browser_search":
       let browser = plan.browser?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       let site = plan.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -371,16 +387,67 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         speak("브라우저 검색 내용을 이해하지 못했습니다. 다시 말씀해 주세요.")
         return
       }
-      search(browser: browser, site: site, query: query, request: request)
+      requestApproval(kind: plan.action, title: "브라우저 검색", detail: "\(browser)에서 \(site) · \(query)", request: request, arguments: ["browser": browser, "site": site, "query": query])
     case "get_active_application":
       let result = MacTools.activeApplication()
       LearningMemory.record(request: request, action: plan.action, result: result)
       speak(result)
+    case "get_system_status":
+      finishReadTool(MacToolbox.systemStatus(), action: plan.action, request: request)
+    case "list_running_applications":
+      finishReadTool(MacToolbox.runningApplications(), action: plan.action, request: request)
+    case "get_clipboard":
+      finishReadTool(MacToolbox.clipboardText(), action: plan.action, request: request)
+    case "set_clipboard":
+      let content = plan.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !content.isEmpty else { speak("클립보드에 저장할 내용을 이해하지 못했습니다."); return }
+      requestApproval(kind: plan.action, title: "클립보드 변경", detail: String(content.prefix(300)), request: request, arguments: ["content": content])
     default:
       let answer = plan.answer?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "요청을 이해하지 못했습니다."
       LearningMemory.record(request: request, action: "answer", result: answer)
       speak(answer)
     }
+  }
+
+  private func finishReadTool(_ result: String, action: String, request: String) {
+    LearningMemory.record(request: request, action: action, result: result)
+    speak(result)
+  }
+
+  private func requestApproval(kind: String, title: String, detail: String, request: String, arguments: [String: String]) {
+    pendingMacAction = PendingMacAction(kind: kind, title: title, detail: detail, request: request, arguments: arguments)
+    reply = "실행 전에 내용을 확인해 주세요."
+    LearningMemory.record(request: request, action: kind, result: "승인 대기")
+    startWakeListening()
+  }
+
+  private func interpretMacApproval(_ text: String) {
+    let compact = text.replacingOccurrences(of: " ", with: "")
+    if ["취소", "그만", "하지마"].contains(where: compact.contains) { cancelMacAction(); return }
+    if ["실행", "진행", "승인", "응", "좋아", "그래"].contains(where: compact.contains) { confirmMacAction(); return }
+    reply = "실행할지 취소할지 다시 말씀해 주세요."
+    startWakeListening()
+  }
+
+  func confirmMacAction() {
+    guard let action = pendingMacAction else { return }
+    pendingMacAction = nil
+    switch action.kind {
+    case "open_application": launch(action.arguments["application"] ?? "")
+    case "close_application": close(action.arguments["application"] ?? "", request: action.request)
+    case "browser_search":
+      search(browser: action.arguments["browser"] ?? "Safari", site: action.arguments["site"] ?? "Google", query: action.arguments["query"] ?? "", request: action.request)
+    case "set_clipboard":
+      finishReadTool(MacToolbox.setClipboard(action.arguments["content"] ?? ""), action: action.kind, request: action.request)
+    default: speak("지원하지 않는 승인 작업입니다.")
+    }
+  }
+
+  func cancelMacAction() {
+    let kind = pendingMacAction?.kind ?? "unknown"
+    pendingMacAction = nil
+    LearningMemory.record(request: "사용자 취소", action: kind, result: "취소")
+    speak("작업을 취소했습니다.")
   }
 
   private func interpretKakaoApproval(_ text: String) {
@@ -753,7 +820,7 @@ enum Ollama {
        ["kakao_message", "open_application", "close_application", "browser_search", "get_active_application", "answer"].contains(plan.action) {
       return plan
     }
-    return AgentPlan(action: "unknown", recipient: nil, body: nil, application: nil, browser: nil, site: nil, query: nil, answer: nil)
+    return AgentPlan(action: "unknown", recipient: nil, body: nil, application: nil, browser: nil, site: nil, query: nil, content: nil, answer: nil)
   }
 
   static func kakaoDecision(_ text: String, message: KakaoMessage) async throws -> String {
