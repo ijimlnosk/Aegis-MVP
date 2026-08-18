@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types src/**/*.test.ts apps/**/*.test.ts",
-    "mac-agent": "node --env-file=.env.local --experimental-strip-types apps/mac-agent/src/server.ts"
+    "mac-agent": "node --env-file=.env.local --experimental-strip-types apps/mac-agent/src/server.ts",
+    "server-agent": "node --env-file=.env.local --experimental-strip-types apps/server-agent/src/server.ts"
   },
   "dependencies": {
     "@openai/agents": "0.15.0",

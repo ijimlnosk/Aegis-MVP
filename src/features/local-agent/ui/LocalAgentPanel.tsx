@@ -55,5 +55,8 @@ async function createSpeech(text: string) {
 function getApprovalText(action?: PendingAction) {
   if (action?.tool === "open_mac_application") return `${String(action.args.application)}을(를) 실행할까요?`;
   if (action?.tool === "capture_mac_screen") return "현재 화면을 캡처할까요?";
-  return "프로젝트 타입 검사를 실행할까요?";
+  if (action?.tool === "run_project_typecheck") return `${String(action.args.project)} 타입 검사를 실행할까요?`;
+  const operation = action?.tool.split("_")[0];
+  const labels: Record<string, string> = { restart: "재시작", stop: "중지", start: "시작" };
+  return `${String(action?.args.container)} 컨테이너를 ${labels[operation ?? ""] ?? "변경"}할까요?`;
 }
