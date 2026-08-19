@@ -24,7 +24,8 @@ enum ServerIntentParser {
   }
 
   private static func containerMutation(_ text: String) -> AgentStep? {
-    let operations = [("재시작", "restart"), ("중지", "stop"), ("내려", "stop"), ("시작", "start")]
+    let operations = [("다시 올려", "restart"), ("재시작", "restart"), ("중지", "stop"),
+      ("내려", "stop"), ("올려", "start"), ("시작", "start")]
     for (word, action) in operations where text.contains(word) {
       guard let container = value(before: word, in: text) else { return nil }
       let actions: [String: AgentAction] = ["start": .startDockerContainer, "stop": .stopDockerContainer, "restart": .restartDockerContainer]

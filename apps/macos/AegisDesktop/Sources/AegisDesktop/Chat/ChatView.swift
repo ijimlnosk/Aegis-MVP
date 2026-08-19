@@ -4,6 +4,7 @@ struct ChatView: View {
   @ObservedObject var store: ChatStore
   let busy: Bool
   let submit: (String) -> Void
+  let cancel: () -> Void
   let approve: (UUID) -> Void
   let reject: (UUID) -> Void
 
@@ -28,7 +29,7 @@ struct ChatView: View {
         }
       }
       Divider()
-      ChatInput(disabled: busy, submit: submit).padding()
+      ChatInput(disabled: busy, submit: submit, cancel: cancel).padding()
     }
   }
 }

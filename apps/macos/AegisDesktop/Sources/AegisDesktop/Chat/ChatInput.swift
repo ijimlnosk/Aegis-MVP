@@ -4,6 +4,7 @@ struct ChatInput: View {
   @State private var text = ""
   let disabled: Bool
   let submit: (String) -> Void
+  let cancel: () -> Void
 
   var body: some View {
     HStack(alignment: .bottom) {
@@ -11,8 +12,11 @@ struct ChatInput: View {
         .lineLimit(1...5)
         .textFieldStyle(.roundedBorder)
         .onSubmit(send)
-      Button("전송", action: send).buttonStyle(.borderedProminent)
-        .disabled(disabled || trimmed.isEmpty)
+      if disabled { Button("취소", action: cancel).buttonStyle(.bordered) }
+      else {
+        Button("전송", action: send).buttonStyle(.borderedProminent)
+          .disabled(trimmed.isEmpty)
+      }
     }
   }
 

@@ -38,6 +38,7 @@ struct AegisView: View {
       .padding()
       Divider()
       ChatView(store: agent.chat, busy: agent.busy, submit: agent.send,
+        cancel: agent.cancelCurrentOperation,
         approve: agent.approveChatAction, reject: agent.rejectChatAction)
     }
   }
@@ -47,7 +48,17 @@ struct AegisView: View {
 final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
   let voiceInputEnabled = false
   let chat = ChatStore()
-  private let memoryStore = MemoryStore()
+  let memoryStore = MemoryStore()
+  let skillStore = SkillStore()
+  let screenInspector = ScreenInspector()
+  let visibleWindows = VisibleWindowService()
+  lazy var developmentSessions = DevelopmentSessionCoordinator(memory: memoryStore.repository)
+  lazy var proactiveCoordinator = ProactiveCoordinator(memory: memoryStore.repository)
+  lazy var contextObserver = ContextObserver { [weak self] in
+    guard let self else { return }
+    let notices = await self.proactiveCoordinator.observe()
+    self.surface(notices)
+  }
   @Published var reply = "Aegis가 준비되었습니다."
   @Published var busy = false
   @Published var listening = false
@@ -71,8 +82,14 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   private var lastKakaoApprovalText = ""
   private var pendingKakaoApprovalID: UUID?
   private var planExecutor: AgentPlanExecutor?
+  var activeSkill: LearnedSkill?
+  var pendingSkillProposal: PendingSkillProposal?
+  var ignoredSkillPatterns: Set<SkillPattern> = []
   private var executingStepID: UUID?
+  var screenAnalysisTask: Task<Void, Never>?
+  var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
+  private var terminationObserver: NSObjectProtocol?
   private var silenceTimer: Timer?
   private var speechRecoveryTimer: Timer?
   private let finishWords = ["답변해", "대답해", "응답해"]
@@ -87,6 +104,17 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     guard !started else { return }
     started = true
     LearningStore.bootstrap()
+    restoreProactivePreferences()
+    contextObserver.start()
+    terminationObserver = NotificationCenter.default.addObserver(
+      forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+    ) { [weak self] _ in Task { @MainActor in self?.stop() } }
+  }
+
+  func stop() {
+    contextObserver.stop()
+    if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+    terminationObserver = nil
   }
 
   func startWakeListening() {
@@ -285,6 +313,14 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else { return }
     chat.append(.user, message)
+    if let proactiveIntent = ProactiveIntentParser.parse(message) {
+      speak(handleProactiveIntent(proactiveIntent)); return
+    }
+    if let skillIntent = SkillIntentParser.parse(message) {
+      do { speak(try skillStore.handle(skillIntent)) }
+      catch { speak(error.localizedDescription, role: .error) }
+      return
+    }
     if let memoryIntent = MemoryIntentParser.parse(message) {
       let result = memoryStore.handle(memoryIntent)
       speak(result, role: result.hasPrefix("메모리 저장소 오류") ? .error : .assistant)
@@ -298,10 +334,26 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       interpretMacApproval(message)
       return
     }
+    if let screenPlan = ScreenIntentResolver.plan(for: message, repository: memoryStore.repository) {
+      execute(screenPlan, request: message)
+      return
+    }
+    if let skill = matchedSkill(message) {
+      execute(AgentPlan(steps: skill.steps), request: message, skill: skill)
+      return
+    }
     busy = true
     recordActivity("로컬 AI 행동 계획 생성")
     Task {
       do {
+        if let developerPlan = DeveloperIntentResolver.plan(for: message,
+          repository: memoryStore.repository) {
+          busy = false; execute(developerPlan, request: message); return
+        }
+        if let projectPlan = ProjectIntentResolver.plan(for: message,
+          repository: memoryStore.repository) {
+          busy = false; execute(projectPlan, request: message); return
+        }
         let memory = MemoryRetriever.relevant(to: message, repository: memoryStore.repository)
         let plan = try await AgentPlanner.plan(for: message, memory: memory)
         busy = false
@@ -313,9 +365,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     }
   }
 
-  private func execute(_ plan: AgentPlan, request: String) {
+  private func execute(_ plan: AgentPlan, request: String, skill: LearnedSkill? = nil) {
     do {
-      planExecutor = try AgentPlanExecutor(plan: plan, request: request)
+      planExecutor = try AgentPlanExecutor(plan: plan, request: request, isLearnedSkill: skill != nil)
+      activeSkill = skill
       busy = true
       advancePlan()
     } catch {
@@ -335,12 +388,18 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       execute(step, request: executor.state.request)
     case .approval(let step, let index, let total):
       executingStepID = step.id
-      requestStepApproval(step, request: executor.state.request, progress: "\(index)/\(total)")
+      if step.action.isDockerMutation {
+        validateThenRequestDockerApproval(step, request: executor.state.request,
+          progress: "\(index)/\(total)")
+      } else {
+        requestStepApproval(step, request: executor.state.request, progress: "\(index)/\(total)")
+      }
     case .skipped(let step, let index, let total):
       chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 건너뜀 · 이전 필수 단계 실패")
       advancePlan()
     case .finished(let answer):
       if let answer, !answer.isEmpty { speak(answer) }
+      finishSkillExecution(executor)
       planExecutor = nil; executingStepID = nil; busy = false
     }
   }
@@ -361,6 +420,13 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       guard !application.isEmpty else { failCurrentStep("열 앱을 이해하지 못했습니다."); return }
       if let project = step.project { openRememberedProject(project, request: request) }
       else { launch(application, request: request) }
+    case .openProject:
+      let project = step.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let application = step.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !project.isEmpty, !application.isEmpty else {
+        failCurrentStep("프로젝트와 코드 에디터가 필요합니다."); return
+      }
+      openProject(project, application: application, request: request)
     case .closeApplication:
       let application = step.application?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !application.isEmpty else { failCurrentStep("닫을 앱을 이해하지 못했습니다."); return }
@@ -400,12 +466,20 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       let project = step.project?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !project.isEmpty else { failCurrentStep("확인할 프로젝트가 필요합니다."); return }
       runRememberedProjectStatus(project, request: request)
+    case .getProjectGitStatus, .getProjectBranch, .getProjectDiffSummary,
+         .getProjectRecentCommits, .getProjectChangedFiles, .getProjectPackageScripts,
+         .getProjectHealth, .assessProjectDeploymentReadiness, .runProjectTypecheck, .runProjectTests, .runProjectLint,
+         .runProjectBuild, .startDevelopmentSession, .endDevelopmentSession,
+         .getDevelopmentRecap, .getTodayDevelopmentSummary:
+      runDeveloperTool(step, request: request)
+    case .captureScreen, .inspectScreen, .inspectActiveWindow,
+         .inspectScreenWithProjectContext, .getScreenAwarenessStatus,
+         .listVisibleWindows, .inspectWindow:
+      runScreenTool(step, request: request)
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       let container = step.container?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !container.isEmpty else { failCurrentStep("변경할 컨테이너 이름이 필요합니다."); return }
-      let operation = action.replacingOccurrences(of: "_docker_container", with: "")
-      guard let tool = ServerTool(rawValue: operation) else { failCurrentStep("지원하지 않는 서버 작업입니다."); return }
-      runServerTool(tool, request: request, arguments: ["container": container], approved: true)
+      runValidatedDockerMutation(step, container: container, request: request)
     case .setClipboard:
       let content = step.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !content.isEmpty else { failCurrentStep("클립보드에 저장할 내용을 이해하지 못했습니다."); return }
@@ -415,7 +489,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     }
   }
 
-  private func finishReadTool(_ result: String, action: String, request: String, target: String = "") {
+  func finishReadTool(_ result: String, action: String, request: String, target: String = "") {
     LearningMemory.record(request: request, action: action, result: result)
     memoryStore.recordAction(request: request, action: action, target: target,
       result: result, succeeded: resultSucceeded(result))
@@ -423,7 +497,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     completeCurrentStep(succeeded: resultSucceeded(result))
   }
 
-  private func runServerTool(_ tool: ServerTool, request: String, arguments: [String: Any] = [:], approved: Bool = false) {
+  func runServerTool(_ tool: ServerTool, request: String, arguments: [String: Any] = [:], approved: Bool = false) {
     guard tool.requiresApproval == approved else {
       speak("승인 상태가 올바르지 않아 서버 작업을 실행하지 않았습니다.")
       return
@@ -463,7 +537,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     }
   }
 
-  private func requestStepApproval(_ step: AgentStep, request: String, progress: String) {
+  func requestStepApproval(_ step: AgentStep, request: String, progress: String) {
     let title: String
     let detail: String
     var arguments: [String: String] = [:]
@@ -474,12 +548,18 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     case .openApplication:
       title = step.project.map { "\($0) 프로젝트 열기" } ?? "\(step.application ?? "") 실행"
       detail = "앱 또는 프로젝트를 열고 화면 앞으로 가져옵니다."
+    case .openProject:
+      title = "\(step.project ?? "") 프로젝트 열기"
+      detail = "허용된 \(step.application ?? "코드 에디터")에서 등록된 프로젝트를 엽니다."
     case .closeApplication:
       title = "\(step.application ?? "") 종료"; detail = "저장하지 않은 작업이 영향을 받을 수 있습니다."
     case .browserSearch:
       title = "브라우저 검색"; detail = "\(step.browser ?? "Safari")에서 \(step.site ?? "") · \(step.query ?? "")"
     case .setClipboard:
       title = "클립보드 변경"; detail = String((step.content ?? "").prefix(300))
+    case .runProjectTypecheck, .runProjectTests, .runProjectLint, .runProjectBuild:
+      title = "\(step.project ?? "") 프로젝트 검증"
+      detail = "등록된 package.json의 \(step.action.rawValue.replacingOccurrences(of: "run_project_", with: "")) 스크립트를 실행합니다."
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       let operation = step.action.rawValue.replacingOccurrences(of: "_docker_container", with: "")
       title = "\(step.container ?? "") 컨테이너 \(serverActionLabel(operation))"
@@ -492,7 +572,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       detail: detail, request: request, arguments: arguments)
   }
 
-  private func completeCurrentStep(succeeded: Bool) {
+  func completeCurrentStep(succeeded: Bool) {
     guard let id = executingStepID, var executor = planExecutor else { return }
     let position = executor.state.index + 1
     let total = executor.state.plan.steps.count
@@ -502,7 +582,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     advancePlan()
   }
 
-  private func failCurrentStep(_ message: String) {
+  func failCurrentStep(_ message: String) {
     speak(message, role: .error)
     completeCurrentStep(succeeded: false)
   }
@@ -548,11 +628,13 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   }
 
   func approveChatAction(_ id: UUID) {
+    if pendingSkillProposal?.candidate.id == id { saveSkillProposal(); return }
     if pendingMacAction?.id == id { confirmMacAction(); return }
     if pendingKakaoApprovalID == id { confirmKakaoMessage() }
   }
 
   func rejectChatAction(_ id: UUID) {
+    if pendingSkillProposal?.candidate.id == id { rejectSkillProposal(); return }
     if pendingMacAction?.id == id { cancelMacAction(); return }
     if pendingKakaoApprovalID == id { cancelKakaoMessage() }
   }
@@ -673,7 +755,30 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     } catch { failCurrentStep(error.localizedDescription) }
   }
 
-  private func speak(_ text: String, role: ChatRole = .assistant) {
+  private func openProject(_ project: String, application: String, request: String) {
+    switch ProjectOpeningService.resolve(project: project, application: application,
+      repository: memoryStore.repository) {
+    case .failure(let error): failCurrentStep(error.localizedDescription)
+    case .success(let resolved):
+      busy = true
+      Task {
+        let result = await ProjectOpeningService.open(resolved)
+        busy = false
+        switch result {
+        case .success(let message):
+          memoryStore.recordAction(request: request, action: AgentAction.openProject.rawValue,
+            target: resolved.project, result: message, succeeded: true)
+          speak(message); completeCurrentStep(succeeded: true)
+        case .failure(let error):
+          memoryStore.recordAction(request: request, action: AgentAction.openProject.rawValue,
+            target: resolved.project, result: error.localizedDescription, succeeded: false)
+          failCurrentStep(error.localizedDescription)
+        }
+      }
+    }
+  }
+
+  func speak(_ text: String, role: ChatRole = .assistant) {
     reply = text
     chat.append(role, text)
   }

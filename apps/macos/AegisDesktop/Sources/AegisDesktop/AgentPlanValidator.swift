@@ -1,28 +1,38 @@
 enum AgentPlanValidator {
-  static func errors(in plan: AgentPlan, for request: String) -> [String] {
+  static func errors(in plan: AgentPlan, for request: String,
+                     enforceRequestIntent: Bool = true) -> [String] {
     if plan.steps.isEmpty {
       return plan.finalAnswer?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         ? [] : ["plan requires at least one step or finalAnswer"]
     }
     if plan.steps.count > AgentPlan.maximumSteps { return ["plan exceeds maximum step count"] }
     return plan.steps.enumerated().flatMap { index, step in
-      var errors = errors(in: step, for: request).map { "step \(index + 1): \($0)" }
+      var errors = errors(in: step, for: request,
+        enforceRequestIntent: enforceRequestIntent).map { "step \(index + 1): \($0)" }
       if index == 0, step.dependency != .independent { errors.append("step 1 cannot depend on a previous step") }
       return errors
     }
   }
 
-  static func errors(in step: AgentStep, for request: String) -> [String] {
+  static func errors(in step: AgentStep, for request: String,
+                     enforceRequestIntent: Bool = true) -> [String] {
     switch step.action {
     case .kakaoMessage: missing([("recipient", step.recipient), ("body", step.body)])
     case .openApplication, .closeApplication: missing([("application", step.application)])
-    case .browserSearch: browserErrors(step, request: request)
+    case .openProject:
+      missing([("project", step.project), ("application", step.application)])
+        + (step.application.map(CodeEditorResolver.isAllowed) == true ? [] : ["application is not an allowed code editor"])
+    case .browserSearch:
+      enforceRequestIntent ? browserErrors(step, request: request) : missing([("site", step.site)])
     case .setClipboard: missing([("content", step.content)])
     case .getDockerLogs:
       missing([("container", step.container)]) + logLineErrors(step.lines)
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       missing([("container", step.container)])
     case .getServerProjectStatus, .getRememberedProjectStatus: missing([("project", step.project)])
+    case let action where action.isProjectAction: missing([("project", step.project)])
+    case .inspectScreenWithProjectContext: missing([("project", step.project)])
+    case .inspectWindow: missing([("application", step.application)])
     case .answer: ["answer is only allowed as plan.finalAnswer"]
     case .unknown: ["unknown action"]
     default: []

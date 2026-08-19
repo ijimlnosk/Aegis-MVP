@@ -38,7 +38,7 @@ import Testing
   try repository.save(MemoryRecord(type: .project, key: "ptfriends", value: "/tmp/ptfriends"))
   let memory = MemoryRetriever.relevant(to: "PTFriends 열고 상태 확인해", repository: repository)
   let plan = try await AgentPlanner.plan(for: "PTFriends 열고 상태 확인해", memory: memory)
-  #expect(plan.steps.map(\.action) == [.openApplication, .getRememberedProjectStatus])
+  #expect(plan.steps.map(\.action) == [.openProject, .getRememberedProjectStatus])
   #expect(plan.steps[1].dependency == .requiresPreviousSuccess)
 }
 

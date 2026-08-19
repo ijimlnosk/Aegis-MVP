@@ -3,8 +3,9 @@ import Foundation
 struct AgentPlanExecutor {
   private(set) var state: ExecutionState
 
-  init(plan: AgentPlan, request: String) throws {
-    let errors = AgentPlanValidator.errors(in: plan, for: request)
+  init(plan: AgentPlan, request: String, isLearnedSkill: Bool = false) throws {
+    let errors = AgentPlanValidator.errors(in: plan, for: request,
+      enforceRequestIntent: !isLearnedSkill)
     guard errors.isEmpty else { throw AgentPlannerError.invalidPlan(errors) }
     state = ExecutionState(plan: plan, request: request)
   }

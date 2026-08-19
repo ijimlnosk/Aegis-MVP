@@ -79,7 +79,8 @@ enum MultiStepIntentParser {
 
   private static func needsPrevious(_ previous: AgentStep?, _ current: AgentStep) -> Bool {
     guard let previous else { return false }
-    return previous.action.requiresApproval || current.action.requiresApproval || previous.action == .openApplication
+    return previous.action.requiresApproval || current.action.requiresApproval
+      || previous.action == .openApplication || previous.action == .openProject
   }
 
   private static func copy(_ step: AgentStep, dependency: StepDependency) -> AgentStep {

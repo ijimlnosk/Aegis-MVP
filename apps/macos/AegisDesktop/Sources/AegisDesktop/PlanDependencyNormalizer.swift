@@ -3,7 +3,8 @@ enum PlanDependencyNormalizer {
     var previous: AgentStep?
     let steps = plan.steps.map { step -> AgentStep in
       let forced = previous.map {
-        $0.action.requiresApproval || step.action.requiresApproval || $0.action == .openApplication
+        $0.action.requiresApproval || step.action.requiresApproval
+          || $0.action == .openApplication || $0.action == .openProject
       } ?? false
       let dependency: StepDependency = forced ? .requiresPreviousSuccess : step.dependency
       previous = step

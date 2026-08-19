@@ -11,11 +11,10 @@ enum AgentPlannerError: LocalizedError {
 enum AgentPlanner {
   static func plan(for request: String, memory: MemoryContext) async throws -> AgentPlan {
     if let deterministic = MultiStepIntentParser.parse(memory.request) { return deterministic }
-    if let serverPlan = ServerIntentParser.parse(memory.request) { return AgentPlan(step: serverPlan) }
     if let project = memory.project, memory.request.contains("열"),
        ["상태", "status"].contains(where: memory.request.lowercased().contains) {
       return AgentPlan(steps: [
-        AgentStep(action: .openApplication, application: "Visual Studio Code", project: project.key),
+        AgentStep(action: .openProject, application: "Visual Studio Code", project: project.key),
         AgentStep(action: .getRememberedProjectStatus, dependency: .requiresPreviousSuccess, project: project.key),
       ])
     }
@@ -23,6 +22,7 @@ enum AgentPlanner {
        ["상태", "status"].contains(where: memory.request.lowercased().contains) {
       return AgentPlan(step: AgentStep(action: .getRememberedProjectStatus, project: project.key))
     }
+    if let serverPlan = ServerIntentParser.parse(memory.request) { return AgentPlan(step: serverPlan) }
     let content = plannerContent(request: memory.request, memories: memory.records)
     let generated = try await Ollama.structured(system: AgentPlannerPrompt.system, content: content, schema: schema)
     let first = PlanDependencyNormalizer.normalize(generated)
@@ -61,6 +61,7 @@ enum AgentPlanner {
       "site": ["type": "string"], "query": ["type": "string"], "content": ["type": "string"],
       "project": ["type": "string"], "container": ["type": "string"],
       "lines": ["type": "integer", "minimum": 1, "maximum": 1000],
+      "displayIndex": ["type": "integer", "minimum": 1, "maximum": 16],
     ],
     "required": ["action", "dependency"],
   ]
