@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Aegis-MVP}/apps/macos/AegisDesktop",
+            "name": "Debug AegisDesktop (apps/macos/AegisDesktop)",
+            "target": "AegisDesktop",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AegisDesktop (apps/macos/AegisDesktop)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Aegis-MVP}/apps/macos/AegisDesktop",
+            "name": "Release AegisDesktop (apps/macos/AegisDesktop)",
+            "target": "AegisDesktop",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AegisDesktop (apps/macos/AegisDesktop)"
+        }
+    ]
+}
