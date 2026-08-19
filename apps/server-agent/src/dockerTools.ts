@@ -5,7 +5,7 @@ import { validateContainerName, validateLogLines } from "./validation.ts";
 const execFileAsync = promisify(execFile);
 
 export async function getContainers() {
-  return docker(["ps", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}"]);
+  return docker(["ps", "-a", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}"]);
 }
 
 export async function getDockerLogs(container: unknown, lines: unknown) {
