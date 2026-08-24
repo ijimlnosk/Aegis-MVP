@@ -8,11 +8,27 @@ struct ProjectValidationResult: Codable, Equatable {
   let status: ValidationStatus
   let summary: String
   let warningCount: Int
+  let supportStatus: ValidationSupportStatus
+  let executionStatus: ValidationExecutionStatus
+  let exitCode: Int?
+  let severity: ValidationSeverity
 
   init(check: ProjectValidationCheck, status: ValidationStatus,
-       summary: String, warningCount: Int = 0) {
+       summary: String, warningCount: Int = 0, exitCode: Int? = nil) {
     self.check = check; self.status = status; self.summary = summary
-    self.warningCount = warningCount
+    self.warningCount = warningCount; self.exitCode = exitCode
+    switch status {
+    case .passed:
+      supportStatus = .supported; executionStatus = .passed; severity = .information
+    case .failed:
+      supportStatus = .supported; executionStatus = .failed; severity = .error
+    case .warning:
+      supportStatus = .supported; executionStatus = .warning; severity = .warning
+    case .unsupported:
+      supportStatus = .unsupported; executionStatus = .notRun; severity = .information
+    case .skipped:
+      supportStatus = .skipped; executionStatus = .notRun; severity = .warning
+    }
   }
   var succeedsPlan: Bool { status != .failed }
 }
@@ -57,11 +73,20 @@ enum ProjectValidationRunner {
         summary: "\(project)에는 \(check.rawValue) 스크립트가 없어 \(check.rawValue) 검사를 건너뜁니다.")
     } catch ProjectCommandError.commandFailed(let detail) {
       return .init(check: check, status: .failed,
-        summary: detail.trimmingCharacters(in: .whitespacesAndNewlines))
+        summary: bounded(detail), exitCode: 1)
+    } catch ProjectCommandError.commandExited(let detail, let exitCode) {
+      return .init(check: check, status: .failed,
+        summary: bounded(detail), exitCode: exitCode)
     } catch {
       return .init(check: check, status: .skipped,
         summary: "\(check.rawValue) 검사 도구를 실행할 수 없습니다: \(error.localizedDescription)")
     }
+  }
+
+  private static func bounded(_ value: String) -> String {
+    let useful = value.split(separator: "\n", omittingEmptySubsequences: true)
+      .map(String.init).filter { !$0.hasPrefix("> ") }.suffix(16).joined(separator: "\n")
+    return String(useful.prefix(2_000)).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func lintWarnings(_ output: String) -> Int? {

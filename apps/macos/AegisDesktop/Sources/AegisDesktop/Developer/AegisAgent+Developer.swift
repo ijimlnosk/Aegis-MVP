@@ -20,6 +20,16 @@ extension AegisAgent {
         return
       }
       do {
+        if step.action == .getDevelopmentRecap {
+          let typed = try await MainActor.run { try self.developmentSessions.recapResult(project: project) }
+          let result = DevelopmentRecapFormatter.format(typed)
+          await MainActor.run {
+            self.busy = false
+            self.finishReadTool(result, action: step.action.rawValue, request: request,
+              target: project, succeeded: typed.executionStatus == .succeeded)
+          }
+          return
+        }
         let result = try await self.developerResult(step, project: project)
         await MainActor.run {
           self.busy = false

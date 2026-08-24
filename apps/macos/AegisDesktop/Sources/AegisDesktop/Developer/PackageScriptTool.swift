@@ -29,8 +29,17 @@ enum PackageScriptTool {
     guard supported.contains(script) else { throw ProjectCommandError.unsupportedScript(script) }
     let package = try inspect(at: project)
     guard package.scripts.contains(script) else { throw ProjectCommandError.unsupportedScript(script) }
-    let executable = "/usr/bin/env"
-    let arguments = package.manager == .yarn ? ["yarn", script] : [package.manager.rawValue, "run", script]
+    let tool = package.manager.rawValue
+    let toolArguments = package.manager == .yarn ? [script] : ["run", script]
+    let (executable, arguments) = resolveExecutable(tool, arguments: toolArguments)
     return try ProjectCommandPolicy.run(executable, arguments, at: project)
+  }
+
+  private static func resolveExecutable(_ tool: String, arguments: [String]) -> (String, [String]) {
+    let candidates = ["/opt/homebrew/bin/\(tool)", "/usr/local/bin/\(tool)", "/usr/bin/\(tool)"]
+    if let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+      return (executable, arguments)
+    }
+    return ("/usr/bin/env", [tool] + arguments)
   }
 }
