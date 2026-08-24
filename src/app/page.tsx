@@ -13,7 +13,7 @@ export default function HomePage() {
       <section className="hero">
         <p className="eyebrow">PERSONAL INTELLIGENCE SYSTEM</p>
         <h1>무엇을 도와드릴까요?</h1>
-        <p className="hint">Ollama / Qwen3 4B · 이 Mac에서 직접 실행 중</p>
+        <p className="hint">환경 설정된 Ollama 백엔드 사용 중</p>
       </section>
       <LocalAgentPanel />
     </main>
