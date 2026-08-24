@@ -47,7 +47,7 @@ enum MemoryIntentParser {
       return .remember(type: .preference, key: "recent_commit_count", value: count)
     }
     if let project = capture("^([A-Za-z0-9_.-]+).*?(?:내\\s*)?프로젝트", in: text) {
-      let path = capture("경로(?:는|가)?\\s*(/\\S+?)(?:이야|야)?$", in: text)
+      let path = capture("경로(?:는|가)?\\s*(/\\S+?)(?:이야|야)?(?=\\s|$)", in: text)
       return .remember(type: .project, key: project, value: path ?? project)
     }
     if ["기억해", "알아둬"].contains(where: text.contains) {
