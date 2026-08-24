@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Aegis Remote Gateway is reached over a private Tailscale HTTP address
+  (e.g. http://100.x.x.x:8790) entered by the user at device-registration time.
+  Android's network-security-config can only allow-list literal hostnames/IPs
+  or domain-suffix wildcards; it has no CIDR matching, so a fixed Tailscale
+  CGNAT range (100.64.0.0/10) or arbitrary user IP cannot be declared here.
+  aegisRemoteClient already rejects any http:// host outside loopback,
+  RFC1918, and Tailscale CGNAT (see shared/lib/gatewayURL.ts), so cleartext
+  is enabled only for what that app-layer check will ever pass through.
+  System CA trust is left untouched; this does not affect https:// hosts.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
