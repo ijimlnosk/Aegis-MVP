@@ -1,4 +1,0 @@
-module AegisDesktop {
-header "AegisDesktop-Swift.h"
-export *
-}
