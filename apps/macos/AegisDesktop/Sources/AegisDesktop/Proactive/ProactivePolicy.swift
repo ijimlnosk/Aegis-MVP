@@ -13,6 +13,7 @@ enum ProactivePolicy {
          .getActiveApplication, .listRunningApplications, .getRememberedProjectStatus,
          .getProjectGitStatus, .getProjectBranch, .getProjectChangedFiles, .getProjectHealth:
       .autoObserve
+    case .findProjectPath: .suggestOnly
     case .getDockerLogs, .getServerProjectStatus, .getProjectDiffSummary,
          .getProjectRecentCommits, .getProjectPackageScripts, .assessProjectDeploymentReadiness, .getDevelopmentRecap,
          .getTodayDevelopmentSummary: .autoInvestigateReadOnly
@@ -22,8 +23,21 @@ enum ProactivePolicy {
     case .getClipboard, .startDevelopmentSession, .endDevelopmentSession,
          .runProjectTypecheck, .runProjectTests, .runProjectLint, .runProjectBuild,
          .captureScreen, .inspectScreen, .inspectActiveWindow,
-         .inspectScreenWithProjectContext, .getScreenAwarenessStatus,
-         .listVisibleWindows, .inspectWindow: .suggestOnly
+         .inspectScreenWithProjectContext, .getScreenAwarenessStatus, .getAIBackendStatus,
+         .getRemoteControlStatus,
+         .listVisibleWindows, .inspectWindow, .getUIControlStatus, .getVSCodeQuickOpenStatus,
+         .activateApplication,
+         .focusWindow, .closeWindow, .listUIElements, .inspectUIElement, .pressUIElement,
+         .focusUIElement, .setUIText, .appendUIText, .pressKeyboardShortcut, .scrollUI,
+         .selectMenuItem, .getCodingAgentStatus, .getCodingAgentRecentDiagnostics,
+         .analyzeProjectWithCodingAgent,
+         .proposeCodingTask, .executeCodingTask, .reviewCodingTaskResult,
+         .verifyCodingTask, .rollbackCodingTask, .discoverDevelopmentTask,
+         .rankDevelopmentCandidates, .proposeDevelopmentTask, .executeDevelopmentTask,
+         .verifyDevelopmentTask, .repairDevelopmentTask,
+         .getAutonomousDevelopmentStatus, .inspectGitDiff, .proposeCommitPlan,
+         .createCommit, .getRemoteStatus, .proposePush, .pushCurrentBranch,
+         .getCIStatus, .getPullRequestStatus, .getGitWorkflowStatus: .suggestOnly
     case .answer, .unknown: .forbidden
     }
   }

@@ -24,7 +24,7 @@ enum ProjectChangeDetector {
                                   _ prefix: String, _ limits: ContextThresholds) -> [ProactiveEvent] {
     var events: [ProactiveEvent] = []
     if !old.isDirty, new.isDirty { events.append(make(.projectDirty, .info,
-      "\(new.name) 변경 감지", "\(new.name)에 커밋되지 않은 변경이 생겼습니다.",
+      "\(new.name) 변경 감지", "\(new.name)에 기존 미커밋 변경 \(new.changedFileCount)건이 있습니다.",
       "변경 파일 \(new.changedFileCount)개", "\(prefix):dirty")) }
     if old.isDirty, !new.isDirty { events.append(make(.projectClean, .info,
       "\(new.name) 정리 완료", "\(new.name)가 clean 상태로 돌아왔습니다.",
