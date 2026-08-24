@@ -69,6 +69,11 @@ import Testing
     .remember(type: .project, key: "PTFriends", value: "/Users/kimjinsol/ptfriendsapp"))
 }
 
+@Test func projectPathIsCapturedEvenWithTrailingTextAfterTheRegistrationSentence() {
+  #expect(MemoryIntentParser.parse("Aegis-MVP 프로젝트 경로는 /Users/kimjinsol/Aegis-MVP야\n그리고 기기 연결했으니 테스트 해보고") ==
+    .remember(type: .project, key: "Aegis-MVP", value: "/Users/kimjinsol/Aegis-MVP"))
+}
+
 private func makeMemoryRepository() throws -> MemoryRepository {
   let url = FileManager.default.temporaryDirectory
     .appending(path: "aegis-memory-behavior-\(UUID().uuidString)/memory.sqlite")

@@ -7,6 +7,10 @@ import Testing
   let types = ProactiveDetector.detect(previous: old, current: new, thresholds: .init()).map(\.type)
   #expect(types.contains(.projectDirty))
   #expect(types.contains(.projectChangesHigh))
+  let event = ProactiveDetector.detect(previous: old, current: new,
+    thresholds: .init()).first { $0.type == .projectDirty }
+  #expect(event?.message == "PTFriends에 기존 미커밋 변경 17건이 있습니다.")
+  #expect(event?.message.contains("변경이 생겼습니다") == false)
 }
 
 @Test func projectBranchChangeIsDetected() {

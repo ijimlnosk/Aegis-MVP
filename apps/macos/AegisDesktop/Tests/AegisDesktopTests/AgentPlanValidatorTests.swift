@@ -33,3 +33,10 @@ import Testing
   #expect(!AgentPlanValidator.errors(in: AgentPlan(step: AgentStep(action: .getServerProjectStatus)), for: "프로젝트 상태").isEmpty)
   #expect(!AgentPlanValidator.errors(in: AgentPlan(step: AgentStep(action: .restartDockerContainer)), for: "재시작").isEmpty)
 }
+
+@Test func validatorStillRejectsFirstStepDependencyWhenNormalizationIsBypassed() {
+  let malformed = AgentPlan(steps: [AgentStep(action: .getSystemStatus,
+    dependency: .requiresPreviousSuccess)])
+  #expect(AgentPlanValidator.errors(in: malformed, for: "Mac 상태")
+    .contains("step 1 cannot depend on a previous step"))
+}

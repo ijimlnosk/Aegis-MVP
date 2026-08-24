@@ -47,6 +47,24 @@ import Testing
   #expect(!AgentPlanValidator.errors(in: plan, for: "상태").isEmpty)
 }
 
+@Test func firstStepDependencyIsNormalizedWithoutChangingActionData() {
+  let malformed = AgentPlan(steps: [AgentStep(action: .analyzeProjectWithCodingAgent,
+    dependency: .requiresPreviousSuccess, content: "개선할 부분 찾아줘", project: "PTFriends",
+    codingMode: .readOnlyAnalysis)])
+  let normalized = PlanDependencyNormalizer.normalize(malformed)
+  #expect(normalized.steps[0].dependency == .independent)
+  #expect(normalized.steps[0].action == .analyzeProjectWithCodingAgent)
+  #expect(normalized.steps[0].content == "개선할 부분 찾아줘")
+  #expect(normalized.steps[0].project == "PTFriends")
+  #expect(normalized.steps[0].codingMode == .readOnlyAnalysis)
+}
+
+@Test func laterStepMayRequirePreviousSuccess() {
+  let plan = AgentPlan(steps: [AgentStep(action: .getSystemStatus),
+    AgentStep(action: .getActiveApplication, dependency: .requiresPreviousSuccess)])
+  #expect(PlanDependencyNormalizer.normalize(plan).steps[1].dependency == .requiresPreviousSuccess)
+}
+
 @Test func unknownActionIsRejected() throws {
   let json = #"{"steps":[{"action":"execute_shell","dependency":"independent"}]}"#
   let plan = try JSONDecoder().decode(AgentPlan.self, from: Data(json.utf8))
