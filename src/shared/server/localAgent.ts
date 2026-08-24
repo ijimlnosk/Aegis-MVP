@@ -25,11 +25,15 @@ export async function approveLocalAction(action: PendingAction) {
 }
 
 async function ask(messages: unknown[]) {
-  const response = await fetch(`${process.env.OLLAMA_URL ?? "http://127.0.0.1:11434"}/api/chat`, {
+  const baseURL = process.env.AEGIS_OLLAMA_URL;
+  if (!baseURL) throw new Error("AEGIS_OLLAMA_URL이 설정되지 않았습니다.");
+  const timeout = Number(process.env.AEGIS_OLLAMA_REMOTE_TIMEOUT_SECONDS ?? "300") * 1000;
+  const response = await fetch(`${baseURL.replace(/\/$/, "")}/api/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+    signal: AbortSignal.timeout(timeout),
     body: JSON.stringify({
       model: process.env.OLLAMA_MODEL ?? "qwen3:4b", stream: false, think: false,
-      options: { temperature: 0.2 }, tools,
+      options: { temperature: 0.2, num_predict: 256 }, tools,
       messages: [{ role: "system", content: "당신은 Aegis다. 한국어로 짧게 답한다. 도구 인자에는 명령어가 아닌 registry id와 이름만 넣고, 한 번에 하나의 도구만 사용한다." }, ...messages],
     }),
   });
