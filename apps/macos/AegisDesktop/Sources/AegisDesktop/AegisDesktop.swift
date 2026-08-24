@@ -52,6 +52,12 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   let skillStore = SkillStore()
   let screenInspector = ScreenInspector()
   let visibleWindows = VisibleWindowService()
+  let accessibility = AccessibilityService()
+  let uiCoordinator = UIInteractionCoordinator()
+  let codingCoordinator = CodingTaskCoordinator()
+  let codingProviders = CodingAgentProviderPool()
+  let autonomousDevelopment = AutonomousDevelopmentCoordinator()
+  let desktopBridge = DesktopBridgeServer()
   lazy var developmentSessions = DevelopmentSessionCoordinator(memory: memoryStore.repository)
   lazy var proactiveCoordinator = ProactiveCoordinator(memory: memoryStore.repository)
   lazy var contextObserver = ContextObserver { [weak self] in
@@ -81,12 +87,22 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   private var lastCommandText = ""
   private var lastKakaoApprovalText = ""
   private var pendingKakaoApprovalID: UUID?
-  private var planExecutor: AgentPlanExecutor?
+  var planExecutor: AgentPlanExecutor?
+  var recentUIWindowTarget: ResolvedWindowTarget?
   var activeSkill: LearnedSkill?
   var pendingSkillProposal: PendingSkillProposal?
   var ignoredSkillPatterns: Set<SkillPattern> = []
   private var executingStepID: UUID?
   var screenAnalysisTask: Task<Void, Never>?
+  var codingTask: Task<Void, Never>?
+  var codingFindings: [CodingFindingContext] = []
+  var activeCodingContinuation: CodingFindingContext?
+  var pendingProjectDiscovery: (name: String, path: String)?
+  var activeCodingTaskProposal: CodingTaskProposal?
+  var codingTaskProposalLifecycle: CodingTaskProposalLifecycle?
+  var activeDevelopmentCandidate: DevelopmentTaskCandidate?
+  var gitWorkflowContext = GitWorkflowContext()
+  var conversationSessionID = "desktop"
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?
@@ -106,6 +122,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     LearningStore.bootstrap()
     restoreProactivePreferences()
     contextObserver.start()
+    desktopBridge.start()
     terminationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.willTerminateNotification, object: nil, queue: .main
     ) { [weak self] _ in Task { @MainActor in self?.stop() } }
@@ -113,8 +130,11 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func stop() {
     contextObserver.stop()
+    desktopBridge.stop()
     if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
     terminationObserver = nil
+    codingFindings.removeAll(); activeCodingContinuation = nil
+    activeCodingTaskProposal = nil; codingTaskProposalLifecycle = nil
   }
 
   func startWakeListening() {
@@ -313,8 +333,75 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else { return }
     chat.append(.user, message)
+    if CodingAgentProviderPolicy.rejects(message) {
+      speak(CodingAgentProviderPolicy.unsupportedMessage); return
+    }
     if let proactiveIntent = ProactiveIntentParser.parse(message) {
       speak(handleProactiveIntent(proactiveIntent)); return
+    }
+    if let remotePlan = RemoteControlIntentResolver.plan(for: message) {
+      execute(remotePlan, request: message); return
+    }
+    if pendingKakaoMessage != nil { interpretKakaoApproval(message); return }
+    if pendingMacAction != nil { interpretMacApproval(message); return }
+    if ProjectDiscoveryConfirmationParser.isConfirmation(message) {
+      if let discovery = pendingProjectDiscovery {
+        let result = memoryStore.handle(.remember(type: .project, key: discovery.name, value: discovery.path))
+        pendingProjectDiscovery = nil
+        speak(result)
+      } else {
+        speak("먼저 \"<프로젝트> 위치 찾아줘\"라고 말씀해 주시면 경로를 찾아드릴게요.")
+      }
+      return
+    }
+    if let continuation = GitWorkflowContinuationResolver.resolve(message,
+      repository: memoryStore.repository, context: &gitWorkflowContext) {
+      switch continuation {
+      case .plan(let plan): execute(plan, request: message)
+      case .message(let value): speak(value)
+      }
+      return
+    }
+    let explicitCodingProject = ProjectEntityResolver.resolve(in: message,
+      repository: memoryStore.repository)
+    if let project = explicitCodingProject,
+      !codingFindings.isEmpty, !codingFindings.contains(where: { $0.projectId == project.name.lowercased() }) {
+      codingFindings.removeAll(); activeCodingContinuation = nil
+    }
+    if let continuation = CodingContinuationIntentResolver.resolve(message,
+      findings: codingFindings, explicitProject: explicitCodingProject) {
+      switch continuation {
+      case .write(let intent):
+        activeCodingContinuation = intent.finding
+        execute(intent.plan, request: message); return
+      case .explain(let finding):
+        speak(CodingFindingFormatter.explain(finding)); return
+      case .inspectMore(let finding):
+        activeCodingContinuation = finding
+        execute(AgentPlan(step: AgentStep(action: .analyzeProjectWithCodingAgent,
+          content: message, project: finding.projectName, codingMode: .readOnlyAnalysis)),
+          request: message); return
+      case .findAnother(let finding):
+        activeCodingContinuation = nil
+        execute(AgentPlan(step: AgentStep(action: .analyzeProjectWithCodingAgent,
+          content: message, project: finding.projectName, codingMode: .readOnlyAnalysis)),
+          request: message); return
+      case .clarify:
+        speak("최근 개선점이 여러 프로젝트에 있습니다. 어느 프로젝트의 문제인지 말해 주세요."); return
+      case .forget:
+        codingFindings.removeAll(); activeCodingContinuation = nil
+        speak("이전 코딩 개선점을 이어서 사용하지 않겠습니다."); return
+      }
+    }
+    if let readOnlyCoding = CodingIntentResolver.explicitReadOnlyPlan(for: message,
+      repository: memoryStore.repository, recentWindow: recentUIWindowTarget) {
+      execute(readOnlyCoding, request: message)
+      return
+    }
+    if let autonomous = AutonomousDevelopmentIntentResolver.plan(for: message,
+      repository: memoryStore.repository, active: activeDevelopmentCandidate,
+      recentWindow: recentUIWindowTarget) {
+      execute(autonomous, request: message); return
     }
     if let skillIntent = SkillIntentParser.parse(message) {
       do { speak(try skillStore.handle(skillIntent)) }
@@ -326,16 +413,22 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       speak(result, role: result.hasPrefix("메모리 저장소 오류") ? .error : .assistant)
       return
     }
-    if pendingKakaoMessage != nil {
-      interpretKakaoApproval(message)
-      return
-    }
-    if pendingMacAction != nil {
-      interpretMacApproval(message)
+    if let uiPlan = UIIntentResolver.plan(for: message, repository: memoryStore.repository) {
+      execute(uiPlan, request: message)
       return
     }
     if let screenPlan = ScreenIntentResolver.plan(for: message, repository: memoryStore.repository) {
       execute(screenPlan, request: message)
+      return
+    }
+    if let codingPlan = CodingIntentResolver.plan(for: message,
+      repository: memoryStore.repository, recentWindow: recentUIWindowTarget) {
+      execute(codingPlan, request: message)
+      return
+    }
+    if let gitPlan = GitWorkflowIntentResolver.plan(for: message,
+      repository: memoryStore.repository, context: gitWorkflowContext) {
+      execute(gitPlan, request: message)
       return
     }
     if let skill = matchedSkill(message) {
@@ -343,7 +436,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       return
     }
     busy = true
-    recordActivity("로컬 AI 행동 계획 생성")
+    recordActivity("AI 백엔드 행동 계획 생성")
     Task {
       do {
         if let developerPlan = DeveloperIntentResolver.plan(for: message,
@@ -388,6 +481,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       execute(step, request: executor.state.request)
     case .approval(let step, let index, let total):
       executingStepID = step.id
+      if step.action == .executeCodingTask { codingTaskProposalLifecycle = .awaitingApproval }
+      if step.action == .createCommit { gitWorkflowContext.state = .awaitingCommitApproval }
+      if step.action == .pushCurrentBranch { gitWorkflowContext.state = .awaitingPushApproval }
       if step.action.isDockerMutation {
         validateThenRequestDockerApproval(step, request: executor.state.request,
           progress: "\(index)/\(total)")
@@ -397,8 +493,13 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     case .skipped(let step, let index, let total):
       chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 건너뜀 · 이전 필수 단계 실패")
       advancePlan()
-    case .finished(let answer):
-      if let answer, !answer.isEmpty { speak(answer) }
+    case .preflightApproval(let id, let steps):
+      prepareUIWorkflowPreflight(id: id, steps: steps, request: executor.state.request)
+    case .finished(let summary):
+      if let answer = PlanExecutionFormatter.format(summary,
+        plan: executor.state.plan, request: executor.state.request), !answer.isEmpty {
+        speak(answer, role: summary.status == .succeeded ? .assistant : .error)
+      }
       finishSkillExecution(executor)
       planExecutor = nil; executingStepID = nil; busy = false
     }
@@ -446,6 +547,14 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       finishReadTool(result, action: action, request: request)
     case .getSystemStatus:
       finishReadTool(MacToolbox.systemStatus(), action: action, request: request)
+    case .getAIBackendStatus:
+      runAIBackendDiagnostics(request: request)
+    case .getRemoteControlStatus:
+      Task {
+        let result = await RemoteControlDiagnostics.report(bridge: .load(),
+          desktopBridgeStatus: desktopBridge.status)
+        finishReadTool(result, action: action, request: request)
+      }
     case .listRunningApplications:
       finishReadTool(MacToolbox.runningApplications(), action: action, request: request)
     case .getClipboard:
@@ -472,10 +581,26 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
          .runProjectBuild, .startDevelopmentSession, .endDevelopmentSession,
          .getDevelopmentRecap, .getTodayDevelopmentSummary:
       runDeveloperTool(step, request: request)
+    case .getCodingAgentStatus, .getCodingAgentRecentDiagnostics,
+      .analyzeProjectWithCodingAgent, .proposeCodingTask,
+         .executeCodingTask, .reviewCodingTaskResult, .verifyCodingTask, .rollbackCodingTask:
+      runCodingTool(step, request: request)
+    case .discoverDevelopmentTask, .rankDevelopmentCandidates, .proposeDevelopmentTask,
+         .executeDevelopmentTask, .verifyDevelopmentTask, .repairDevelopmentTask,
+         .getAutonomousDevelopmentStatus:
+      runAutonomousDevelopmentTool(step, request: request)
+    case .inspectGitDiff, .proposeCommitPlan, .createCommit, .getRemoteStatus,
+         .proposePush, .pushCurrentBranch, .getCIStatus, .getPullRequestStatus,
+         .getGitWorkflowStatus:
+      runGitWorkflowTool(step, request: request)
     case .captureScreen, .inspectScreen, .inspectActiveWindow,
          .inspectScreenWithProjectContext, .getScreenAwarenessStatus,
          .listVisibleWindows, .inspectWindow:
       runScreenTool(step, request: request)
+    case .getUIControlStatus, .getVSCodeQuickOpenStatus, .activateApplication, .focusWindow, .closeWindow,
+         .listUIElements, .inspectUIElement, .pressUIElement, .focusUIElement,
+         .setUIText, .appendUIText, .pressKeyboardShortcut, .scrollUI, .selectMenuItem:
+      runUITool(step, request: request)
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       let container = step.container?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !container.isEmpty else { failCurrentStep("변경할 컨테이너 이름이 필요합니다."); return }
@@ -484,17 +609,35 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       let content = step.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       guard !content.isEmpty else { failCurrentStep("클립보드에 저장할 내용을 이해하지 못했습니다."); return }
       finishReadTool(MacToolbox.setClipboard(content), action: action, request: request, target: "clipboard")
+    case .findProjectPath:
+      let name = step.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      guard !name.isEmpty else { failCurrentStep("찾을 프로젝트 이름을 이해하지 못했습니다."); return }
+      if let path = ProjectDiscovery.find(named: name) {
+        pendingProjectDiscovery = (name: name, path: path)
+        finishReadTool("\"\(name)\" 위치를 찾았습니다: \(path)\n등록하려면 \"등록해\"라고 말씀해 주세요.",
+          action: action, request: request, target: name)
+      } else {
+        finishReadTool("\"\(name)\"를 찾지 못했습니다. 홈 디렉터리 바로 아래나 ~/Developer, ~/Projects, ~/Documents 안에 있는지 확인해 주세요.",
+          action: action, request: request, target: name)
+      }
     default:
       failCurrentStep("지원하지 않는 실행 단계입니다.")
     }
   }
 
-  func finishReadTool(_ result: String, action: String, request: String, target: String = "") {
+  func finishReadTool(_ result: String, action: String, request: String, target: String = "",
+                      succeeded explicitSuccess: Bool? = nil) {
+    // Reaching this point means the underlying call returned without throwing --
+    // any real failure already went through the separate catch -> failCurrentStep
+    // path. The result text is informational (git status, server state, UI
+    // status, ...) and must never retroactively flip a successful read to
+    // "failed" just because it mentions a word like "필요합니다" or "오류".
+    let succeeded = explicitSuccess ?? true
     LearningMemory.record(request: request, action: action, result: result)
     memoryStore.recordAction(request: request, action: action, target: target,
-      result: result, succeeded: resultSucceeded(result))
+      result: result, succeeded: succeeded)
     speak(result)
-    completeCurrentStep(succeeded: resultSucceeded(result))
+    completeCurrentStep(succeeded: succeeded, result: result)
   }
 
   func runServerTool(_ tool: ServerTool, request: String, arguments: [String: Any] = [:], approved: Bool = false) {
@@ -557,9 +700,38 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       title = "브라우저 검색"; detail = "\(step.browser ?? "Safari")에서 \(step.site ?? "") · \(step.query ?? "")"
     case .setClipboard:
       title = "클립보드 변경"; detail = String((step.content ?? "").prefix(300))
+    case .setUIText, .appendUIText:
+      title = "UI 텍스트 입력"
+      detail = "\(step.uiLabel ?? "입력 필드")에 '\(String((step.content ?? "").prefix(300)))'을 입력합니다."
+    case .pressUIElement, .selectMenuItem:
+      title = "UI 요소 실행"; detail = "\(step.uiLabel ?? "지정한 요소")을 실행합니다."
+    case .closeWindow:
+      title = "창 닫기"
+      detail = "\(step.project ?? step.application ?? "현재") 창만 닫습니다. 앱은 종료하지 않습니다."
     case .runProjectTypecheck, .runProjectTests, .runProjectLint, .runProjectBuild:
       title = "\(step.project ?? "") 프로젝트 검증"
       detail = "등록된 package.json의 \(step.action.rawValue.replacingOccurrences(of: "run_project_", with: "")) 스크립트를 실행합니다."
+    case .executeCodingTask:
+      title = "\(step.project ?? "") 코딩 작업"
+      detail = activeCodingTaskProposal.map(CodingFindingProposalFormatter.format)
+        ?? CodingFindingProposalFormatter.format(project: step.project ?? "",
+          request: step.content ?? request, finding: activeCodingContinuation)
+    case .executeDevelopmentTask, .repairDevelopmentTask:
+      title = "\(step.project ?? "") 자율 개발 작업"
+      detail = activeDevelopmentCandidate.map {
+        AutonomousDevelopmentFormatter.proposal($0, executable: true)
+      } ?? "승인된 작은 개발 작업을 Codex로 수행하고 Git 변경 및 검증 결과를 확인합니다."
+    case .rollbackCodingTask:
+      title = "\(step.project ?? "") 코딩 작업 롤백"
+      detail = "해당 작업에 독립적으로 귀속되고 이후 변경이 없는 tracked 파일만 되돌립니다."
+    case .createCommit:
+      title = "\(step.project ?? "") 커밋 생성"
+      detail = gitWorkflowContext.plan.map(GitWorkflowFormatter.plan)
+        ?? "승인된 파일만 정확히 stage하고 로컬 커밋을 생성합니다. push는 수행하지 않습니다."
+    case .pushCurrentBranch:
+      title = "\(step.project ?? "") 현재 브랜치 push"
+      detail = gitWorkflowContext.pushProposal.map(GitWorkflowFormatter.push)
+        ?? "현재 브랜치를 일반 push합니다. force push는 지원하지 않습니다."
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       let operation = step.action.rawValue.replacingOccurrences(of: "_docker_container", with: "")
       title = "\(step.container ?? "") 컨테이너 \(serverActionLabel(operation))"
@@ -568,15 +740,57 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       failCurrentStep("승인이 필요하지 않은 단계입니다."); return
     }
     arguments["progress"] = progress
+    if let project = step.project { arguments["project"] = project }
+    if step.action == .createCommit, let id = gitWorkflowContext.activeCommitPlanId {
+      arguments["gitCommitPlanId"] = id.uuidString
+    }
     requestApproval(id: step.id, kind: step.action.rawValue, title: "\(progress) \(title)",
       detail: detail, request: request, arguments: arguments)
   }
 
-  func completeCurrentStep(succeeded: Bool) {
+  private func prepareUIWorkflowPreflight(id: UUID, steps: [AgentStep], request: String) {
+    busy = true
+    Task {
+      do {
+        let windows = try await visibleWindows.list()
+        guard let targetStep = planExecutor?.state.plan.steps.first(where: {
+          $0.action.isUIAction && $0.action != .getUIControlStatus
+        }) else { throw UIInteractionError.targetNotFound("승인할 UI") }
+        if targetStep.application == nil, recentUIWindowTarget == nil {
+          throw UIInteractionError.targetNotFound("승인할 정확한 창")
+        }
+        let window = try UIWindowTargetResolver.resolve(step: targetStep, windows: windows,
+          workflow: nil, recent: recentUIWindowTarget)
+        let approved = try ApprovedUITarget(window: window,
+          semanticTarget: steps.map { $0.action.rawValue }.joined(separator: ","))
+        let resolved = try ResolvedWindowTarget(window)
+        planExecutor?.setPreflightTarget(approved, resolvedWindow: resolved)
+        busy = false
+        let detail = steps.map { approvalDescription($0) }.joined(separator: "\n")
+        requestApproval(id: id, kind: "ui_workflow_preflight", title: "UI 작업 사전 승인",
+          detail: detail, request: request, arguments: [:])
+      } catch {
+        busy = false; speak(error.localizedDescription, role: .error)
+        if planExecutor?.rejectPreflight(id) == true { advancePlan() }
+      }
+    }
+  }
+
+  private func approvalDescription(_ step: AgentStep) -> String {
+    switch step.action {
+    case .closeWindow: "- \(step.project ?? step.application ?? "현재") 창 닫기"
+    case .setUIText, .appendUIText:
+      "- \(step.uiLabel ?? "UI 필드")에 '\(String((step.content ?? "").prefix(300)))' 입력"
+    case .pressUIElement, .selectMenuItem: "- \(step.uiLabel ?? "UI 요소") 실행"
+    default: "- \(step.action.rawValue)"
+    }
+  }
+
+  func completeCurrentStep(succeeded: Bool, result: String? = nil) {
     guard let id = executingStepID, var executor = planExecutor else { return }
     let position = executor.state.index + 1
     let total = executor.state.plan.steps.count
-    guard executor.complete(id, succeeded: succeeded) else { return }
+    guard executor.complete(id, succeeded: succeeded, result: result) else { return }
     planExecutor = executor
     chat.append(.system, "\(position)/\(total) \(succeeded ? "완료" : "실패")")
     advancePlan()
@@ -584,7 +798,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func failCurrentStep(_ message: String) {
     speak(message, role: .error)
-    completeCurrentStep(succeeded: false)
+    completeCurrentStep(succeeded: false, result: message)
   }
 
   private func requestApproval(id: UUID = UUID(), kind: String, title: String, detail: String,
@@ -607,13 +821,28 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func confirmMacAction() {
     guard let action = pendingMacAction else { return }
+    if action.kind == AgentAction.createCommit.rawValue,
+      action.arguments["gitCommitPlanId"] != gitWorkflowContext.activeCommitPlanId?.uuidString {
+      pendingMacAction = nil; failCurrentStep(GitWorkflowError.noActiveCommitPlan.localizedDescription); return
+    }
     chat.resolveApproval(id: action.id, state: .approved)
     chat.append(.system, "작업을 승인했습니다. 실행 결과를 기다리는 중입니다.")
     pendingMacAction = nil
+    if action.kind == "ui_workflow_preflight" {
+      guard planExecutor?.approvePreflight(action.id) == true else {
+        failCurrentStep("승인할 UI 실행 계획을 찾지 못했습니다."); return
+      }
+      advancePlan(); return
+    }
     guard planExecutor?.approve(action.id) == true else {
       failCurrentStep("승인할 실행 단계를 찾지 못했습니다.")
       return
     }
+    if action.kind == AgentAction.executeCodingTask.rawValue {
+      codingTaskProposalLifecycle = .approved
+    }
+    if action.kind == AgentAction.createCommit.rawValue { gitWorkflowContext.state = .committing }
+    if action.kind == AgentAction.pushCurrentBranch.rawValue { gitWorkflowContext.state = .pushing }
     advancePlan()
   }
 
@@ -624,7 +853,20 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     pendingMacAction = nil
     LearningMemory.record(request: "사용자 취소", action: kind, result: "취소")
     chat.append(.system, "작업을 거절했습니다. Server Agent나 Mac 도구를 호출하지 않았습니다.")
-    if planExecutor?.reject(action.id) == true { advancePlan() }
+    if kind == "ui_workflow_preflight" {
+      if planExecutor?.rejectPreflight(action.id) == true { advancePlan() }
+    } else if planExecutor?.reject(action.id) == true {
+      if kind == AgentAction.executeCodingTask.rawValue {
+        codingTaskProposalLifecycle = .rejected
+        activeCodingTaskProposal = nil; activeCodingContinuation = nil
+      }
+      if kind == AgentAction.executeDevelopmentTask.rawValue {
+        Task { await autonomousDevelopment.reject() }
+      }
+      if kind == AgentAction.createCommit.rawValue { gitWorkflowContext.state = .cancelled }
+      if kind == AgentAction.pushCurrentBranch.rawValue { gitWorkflowContext.state = .committed }
+      advancePlan()
+    }
   }
 
   func approveChatAction(_ id: UUID) {
@@ -787,7 +1029,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     !["실패", "못했습니다", "오류", "필요합니다", "찾지 못"].contains(where: result.contains)
   }
 
-  private func recordActivity(_ text: String) {
+  func recordActivity(_ text: String) {
     activitySteps.append("\(Date.now.formatted(date: .omitted, time: .shortened)) · \(text)")
     if activitySteps.count > 20 { activitySteps.removeFirst(activitySteps.count - 20) }
   }
@@ -1048,23 +1290,29 @@ enum WakeWordVerifier {
 }
 
 enum Ollama {
+  private static var transport: OllamaTransport { OllamaTransport() }
+
+  static func endpoint() -> URL? { ScreenAnalysisConfiguration.normalEndpoint()?.chatURL }
+
+  static func endpoint(environment: [String: String]) -> URL? {
+    ScreenAnalysisConfiguration.normalEndpoint(environment: environment)?.chatURL
+  }
+
+  static func model() -> String { ScreenAnalysisConfiguration.normalModel() }
+  static func model(environment: [String: String]) -> String {
+    ScreenAnalysisConfiguration.normalModel(environment: environment)
+  }
+
   static func structured(system: String, content: String, schema: [String: Any]) async throws -> AgentPlan {
-    let url = URL(string: "http://127.0.0.1:11434/api/chat")!
     let body: [String: Any] = [
-      "model": "qwen3:8b", "stream": false, "keep_alive": "30m",
+      "model": model(), "stream": false, "keep_alive": "30m",
       "think": false, "options": ["num_ctx": 4096, "num_predict": 320, "temperature": 0], "format": schema,
       "messages": [["role": "system", "content": system], ["role": "user", "content": content]],
     ]
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 180
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard (response as? HTTPURLResponse)?.statusCode == 200,
-          let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let data = try await transport.chat(body: body)
+    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           let message = json["message"] as? [String: Any],
-          let raw = message["content"] as? String else { throw URLError(.cannotParseResponse) }
+          let raw = message["content"] as? String else { throw OllamaBackendError.malformedResponse }
     return plan(from: raw)
   }
 
@@ -1082,10 +1330,9 @@ enum Ollama {
   }
 
   static func kakaoDecision(_ text: String, message: KakaoMessage) async throws -> String {
-    let url = URL(string: "http://127.0.0.1:11434/api/chat")!
     let body: [String: Any] = [
-      "model": "qwen3:8b", "stream": false, "keep_alive": "30m",
-      "options": ["num_ctx": 2048, "num_predict": 512, "temperature": 0],
+      "model": model(), "stream": false, "keep_alive": "30m",
+      "options": ["num_ctx": 2048, "num_predict": 64, "temperature": 0],
       "format": [
         "type": "object",
         "properties": ["decision": ["type": "string", "enum": ["send", "cancel", "unknown"]]],
@@ -1096,14 +1343,8 @@ enum Ollama {
         ["role": "user", "content": "대기 중인 전송: \(message.recipient)에게 ‘\(message.body)’. 사용자의 다음 발화: ‘\(text)’"],
       ],
     ]
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 180
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard (response as? HTTPURLResponse)?.statusCode == 200,
-          let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+    let data = try await transport.chat(body: body)
+    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
           let message = json["message"] as? [String: Any],
           let content = message["content"] as? String,
           let jsonData = content.data(using: .utf8),
@@ -1113,19 +1354,12 @@ enum Ollama {
   }
 
   static func chat(_ text: String) async throws -> String {
-    let url = URL(string: "http://127.0.0.1:11434/api/chat")!
     let body: [String: Any] = [
-      "model": "qwen3:8b", "stream": false, "keep_alive": "30m",
-      "options": ["num_ctx": 4096, "num_predict": 512, "temperature": 0.3],
+      "model": model(), "stream": false, "keep_alive": "30m",
+      "options": ["num_ctx": 4096, "num_predict": 256, "temperature": 0.3],
       "messages": [["role": "system", "content": "당신은 사용자의 Mac을 돕는 Aegis다. 반드시 자연스러운 한국어로만 답한다. 최종 답변은 간결하고 실행 가능한 형태로 말한다."], ["role": "user", "content": text]],
     ]
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 180
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-    let (data, response) = try await URLSession.shared.data(for: request)
-    guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+    let data = try await transport.chat(body: body)
     let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
     let message = json?["message"] as? [String: Any]
     let answer = message?["content"] as? String ?? "응답을 생성하지 못했습니다."

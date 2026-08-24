@@ -10,6 +10,8 @@ enum AgentPlannerError: LocalizedError {
 
 enum AgentPlanner {
   static func plan(for request: String, memory: MemoryContext) async throws -> AgentPlan {
+    if let diagnostics = AIBackendIntentResolver.plan(for: request) { return diagnostics }
+    if let capability = CapabilityIntentResolver.plan(for: request) { return capability }
     if let deterministic = MultiStepIntentParser.parse(memory.request) { return deterministic }
     if let project = memory.project, memory.request.contains("열"),
        ["상태", "status"].contains(where: memory.request.lowercased().contains) {
@@ -62,6 +64,13 @@ enum AgentPlanner {
       "project": ["type": "string"], "container": ["type": "string"],
       "lines": ["type": "integer", "minimum": 1, "maximum": 1000],
       "displayIndex": ["type": "integer", "minimum": 1, "maximum": 16],
+      "uiLabel": ["type": "string"],
+      "shortcut": ["type": "string", "enum": KeyboardShortcut.allCases.map(\.rawValue)],
+      "scrollDirection": ["type": "string", "enum": ["up", "down", "left", "right"]],
+      "inputPurpose": ["type": "string", "enum": ["navigationSearch", "commandSearch",
+        "find", "filter", "editorContent", "messageContent", "formContent",
+        "terminalInput", "secureInput", "unknown"]],
+      "codingMode": ["type": "string", "enum": ["readOnlyAnalysis", "workspaceWrite"]],
     ],
     "required": ["action", "dependency"],
   ]

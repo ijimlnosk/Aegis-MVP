@@ -10,6 +10,11 @@ enum AgentPlanValidator {
       var errors = errors(in: step, for: request,
         enforceRequestIntent: enforceRequestIntent).map { "step \(index + 1): \($0)" }
       if index == 0, step.dependency != .independent { errors.append("step 1 cannot depend on a previous step") }
+      if step.action == .pressKeyboardShortcut, step.shortcut == .confirm,
+        !(index > 0 && plan.steps[index - 1].action == .setUIText
+          && step.dependency == .requiresPreviousSuccess) {
+        errors.append("step \(index + 1): confirm requires a dependent typed text step")
+      }
       return errors
     }
   }
@@ -30,9 +35,43 @@ enum AgentPlanValidator {
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
       missing([("container", step.container)])
     case .getServerProjectStatus, .getRememberedProjectStatus: missing([("project", step.project)])
+    case .findProjectPath: missing([("content", step.content)])
+    case .analyzeProjectWithCodingAgent:
+      missing([("project", step.project), ("content", step.content)])
+        + (step.codingMode == .readOnlyAnalysis ? [] : ["read-only analysis requires readOnlyAnalysis mode"])
+    case .proposeCodingTask, .executeCodingTask:
+      missing([("project", step.project), ("content", step.content)])
+        + (step.codingMode == nil ? ["missing codingMode"] : [])
+        + (step.action == .executeCodingTask && step.codingMode != .workspaceWrite
+          ? ["execute coding task requires workspaceWrite mode"] : [])
+    case .rollbackCodingTask: missing([("project", step.project)])
+    case .discoverDevelopmentTask, .proposeDevelopmentTask, .executeDevelopmentTask,
+         .verifyDevelopmentTask, .repairDevelopmentTask:
+      missing([("project", step.project), ("content", step.content)])
+    case .rankDevelopmentCandidates, .getAutonomousDevelopmentStatus: []
+    case .inspectGitDiff, .proposeCommitPlan, .createCommit, .getRemoteStatus,
+         .proposePush, .pushCurrentBranch, .getCIStatus, .getPullRequestStatus,
+         .getGitWorkflowStatus:
+      missing([("project", step.project)])
     case let action where action.isProjectAction: missing([("project", step.project)])
     case .inspectScreenWithProjectContext: missing([("project", step.project)])
     case .inspectWindow: missing([("application", step.application)])
+    case .activateApplication, .focusWindow: missing([("application", step.application)])
+    case .setUIText, .appendUIText:
+      missing([("content", step.content), ("uiLabel", step.uiLabel)])
+        + (step.inputPurpose == nil ? ["missing inputPurpose"] : [])
+        + (step.inputPurpose == .secureInput ? ["secure UI input is blocked"] : [])
+        + (enforceRequestIntent && step.content.map({ !request.localizedCaseInsensitiveContains($0) }) == true
+          ? ["UI text must come from the current user request"] : [])
+    case .pressUIElement, .focusUIElement, .inspectUIElement, .selectMenuItem:
+      missing([("uiLabel", step.uiLabel)])
+        + (enforceRequestIntent && step.action == .pressUIElement
+          && !["눌러", "클릭", "press"].contains(where: request.lowercased().contains)
+          ? ["button press intent is not present in the original request"] : [])
+    case .pressKeyboardShortcut:
+      step.shortcut == nil ? ["missing shortcut"]
+        : (step.shortcut == .closeWindow ? ["closeWindow must use close_window"] : [])
+    case .scrollUI: step.scrollDirection == nil ? ["missing scrollDirection"] : []
     case .answer: ["answer is only allowed as plan.finalAnswer"]
     case .unknown: ["unknown action"]
     default: []
