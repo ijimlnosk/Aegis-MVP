@@ -10,8 +10,10 @@ enum ScreenIntentResolver {
     if !applications.isEmpty,
       ["창", "화면", "봐", "비교", "찾아"].contains(where: text.contains) {
       let display = displayIndex(in: text)
+      let project = ProjectEntityResolver.resolve(in: request, repository: repository)
       return AgentPlan(steps: applications.map {
-        AgentStep(action: .inspectWindow, application: $0, displayIndex: display)
+        AgentStep(action: .inspectWindow, application: $0, project: project?.name,
+          displayIndex: display)
       })
     }
     guard hasScreenIntent(text) else { return nil }

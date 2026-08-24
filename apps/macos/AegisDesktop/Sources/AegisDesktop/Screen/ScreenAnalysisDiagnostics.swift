@@ -18,6 +18,11 @@ enum ScreenAnalysisDiagnostics {
     print("[ScreenAnalysis] JSONDecoder error: \(error)")
   }
 
+  static func modelIdentity(_ analysis: ScreenAnalysis) {
+    guard enabled else { return }
+    print("[ScreenAnalysis] model observation application=\(analysis.detectedApplication ?? "nil") window=\(analysis.detectedWindow ?? "nil")")
+  }
+
   static func timing(_ name: String, since start: ContinuousClock.Instant,
                      dimensions: (Int, Int)? = nil) {
     guard enabled else { return }

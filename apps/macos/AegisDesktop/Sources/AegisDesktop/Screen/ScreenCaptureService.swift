@@ -56,8 +56,11 @@ final class ScreenCaptureService: ScreenCaptureProviding {
     ScreenAnalysisDiagnostics.timing("capture", since: started,
       dimensions: (image.width, image.height))
     return ScreenSnapshot(displayCount: content.displays.count, activeApplication: appName,
-      activeWindowTitle: describedWindow?.title, temporaryImageURL: url, width: image.width,
-      height: image.height, captureSource: target.source)
+      bundleIdentifier: describedWindow?.owningApplication?.bundleIdentifier,
+      activeWindowTitle: describedWindow?.title, windowID: describedWindow?.windowID,
+      displayIndex: describedWindow.flatMap { displayIndex(for: $0.frame, in: content.displays) },
+      temporaryImageURL: url, width: image.width, height: image.height,
+      captureSource: target.source)
   }
 
   func diagnostics() async -> ScreenDiagnostics {
@@ -71,5 +74,14 @@ final class ScreenCaptureService: ScreenCaptureProviding {
 
   private func activeWindow(in windows: [SCWindow], processID: pid_t?) -> SCWindow? {
     windows.first { $0.owningApplication?.processID == processID && $0.frame.width > 100 && $0.frame.height > 100 }
+  }
+
+  private func displayIndex(for bounds: CGRect, in displays: [SCDisplay]) -> Int? {
+    displays.sorted { $0.displayID < $1.displayID }.enumerated().max { lhs, rhs in
+      let left = lhs.element.frame.intersection(bounds)
+      let right = rhs.element.frame.intersection(bounds)
+      return (left.isNull ? 0 : left.width * left.height)
+        < (right.isNull ? 0 : right.width * right.height)
+    }.map { $0.offset + 1 }
   }
 }

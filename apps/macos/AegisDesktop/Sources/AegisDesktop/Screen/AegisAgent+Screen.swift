@@ -31,7 +31,7 @@ extension AegisAgent {
           }
           let windows = try await visibleWindows.list()
           windowID = try WindowResolver.resolve(target, displayIndex: step.displayIndex,
-            windows: windows).id
+            preferredTitle: step.project, windows: windows).id
         } catch {
           finishScreen(result: screenFailure(error), step: step, request: request)
           return
@@ -50,8 +50,9 @@ extension AegisAgent {
   }
 
   func cancelCurrentOperation() {
-    guard screenAnalysisTask != nil else { return }
-    screenAnalysisTask?.cancel(); screenAnalysisTask = nil; busy = false
+    guard screenAnalysisTask != nil || codingTask != nil else { return }
+    screenAnalysisTask?.cancel(); screenAnalysisTask = nil
+    codingTask?.cancel(); codingTask = nil; busy = false
     speak("화면 분석이 취소되었습니다.", role: .system)
     completeCurrentStep(succeeded: false)
   }
@@ -68,7 +69,10 @@ extension AegisAgent {
     let rows = windows.map { window in
       let title = window.windowTitle ?? "제목 없음"
       let display = window.displayIndex.map(String.init) ?? "확인 불가"
-      return "- \(window.applicationName) · \(title) · 디스플레이 \(display)\(window.isActive ? " · 활성" : "")"
+      let metadata = window.canonicalApplication == window.applicationName
+        ? "bundle id: \(window.bundleIdentifier ?? "확인 불가")"
+        : "system name: \(window.applicationName) · bundle id: \(window.bundleIdentifier ?? "확인 불가")"
+      return "- \(window.canonicalApplication) · \(metadata) · window title: \(title) · 디스플레이 \(display)\(window.isActive ? " · 활성" : "")"
     }
     return ScreenInspectionResult(message: rows.isEmpty ? "현재 표시 가능한 창이 없습니다."
       : (["현재 열려 있는 창"] + rows).joined(separator: "\n"),
@@ -98,7 +102,9 @@ private extension ScreenAnalysisProgress {
     case .capturingWindow: "현재 창을 캡처하고 있습니다..."
     case .capturing: "현재 화면을 캡처하고 있습니다..."
     case .optimizing: "이미지를 화면 분석용으로 최적화하고 있습니다..."
-    case .analyzing: "Vision 모델로 화면을 분석하고 있습니다..."
+    case .analyzing(let backend):
+      backend == .remote ? "sol-server Vision 모델로 분석하고 있습니다..."
+        : "Vision 모델로 화면을 분석하고 있습니다..."
     }
   }
 }

@@ -3,15 +3,24 @@ import Foundation
 struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusProviding {
   let model: String
   let timeout: TimeInterval
+  let endpoint: VisionEndpoint
+  let backend: VisionBackend
   private let client: any ScreenAnalysisHTTPClient
+  private let coordinator: OllamaInferenceCoordinator
 
   init(model: String = ScreenAnalysisConfiguration.model(),
        timeout: TimeInterval = ScreenAnalysisConfiguration.timeout(),
-       client: (any ScreenAnalysisHTTPClient)? = nil) {
+       endpoint: VisionEndpoint? = ScreenAnalysisConfiguration.visionEndpoint(),
+       backend: VisionBackend = ScreenAnalysisConfiguration.backend(),
+       client: (any ScreenAnalysisHTTPClient)? = nil,
+       coordinator: OllamaInferenceCoordinator = .shared) {
     self.model = model; self.timeout = timeout
+    self.endpoint = endpoint ?? VisionEndpoint(baseURL: URL(string: "http://invalid.invalid")!)
+    self.backend = endpoint == nil ? .unavailable : backend
     self.client = client ?? URLSessionScreenAnalysisClient(timeout: timeout)
+    self.coordinator = coordinator
   }
-  var availabilityDescription: String { "Ollama · \(model)" }
+  var availabilityDescription: String { "Ollama · \(backend.rawValue) · \(model)" }
 
   func analyze(snapshot: ScreenSnapshot, trustedContext: String?) async throws -> ScreenAnalysis {
     let encodingStarted = ContinuousClock.now
@@ -19,7 +28,7 @@ struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusP
     ScreenAnalysisDiagnostics.timing("encoding", since: encodingStarted)
     let requestStarted = ContinuousClock.now
     let result: ScreenAnalysisHTTPResult
-    do { result = try await timedRequest(request) }
+    do { result = try await coordinator.perform { try await timedRequest(request) } }
     catch { throw map(error) }
     ScreenAnalysisDiagnostics.timing("ollama_request", since: requestStarted)
     guard let http = result.response as? HTTPURLResponse else {
@@ -38,12 +47,23 @@ struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusP
   }
 
   func isModelLoaded() async -> Bool? {
-    guard let url = URL(string: "http://127.0.0.1:11434/api/ps") else { return nil }
-    var request = URLRequest(url: url); request.timeoutInterval = min(timeout, 3)
-    guard let result = try? await client.data(for: request),
-      let root = try? JSONSerialization.jsonObject(with: result.data) as? [String: Any],
-      let models = root["models"] as? [[String: Any]] else { return nil }
-    return models.contains { ($0["name"] as? String) == model }
+    await availability() == .available
+  }
+
+  func availability() async -> VisionBackendAvailability {
+    guard backend != .unavailable else { return .invalidConfiguration }
+    var request = URLRequest(url: endpoint.tagsURL)
+    request.timeoutInterval = min(timeout, backend == .remote ? 10 : 3)
+    do {
+      let result = try await client.data(for: request)
+      guard let http = result.response as? HTTPURLResponse,
+        (200..<300).contains(http.statusCode) else { return .serverUnavailable }
+      guard let root = try? JSONSerialization.jsonObject(with: result.data) as? [String: Any],
+        let models = root["models"] as? [[String: Any]] else { return .serverUnavailable }
+      return models.contains { ($0["name"] as? String) == model } ? .available : .modelUnavailable
+    } catch let error as URLError where error.code == .timedOut { return .timeout }
+    catch is CancellationError { return .timeout }
+    catch { return .serverUnavailable }
   }
 
   private func makeRequest(snapshot: ScreenSnapshot, trustedContext: String?) throws -> URLRequest {
@@ -65,10 +85,10 @@ struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusP
     """
     let body: [String: Any] = ["model": model, "stream": false, "think": false,
       "keep_alive": "\(ScreenAnalysisConfiguration.keepAliveSeconds())s",
-      "options": ["num_ctx": 8_192],
+      "options": ["num_ctx": 8_192, "num_predict": 384, "temperature": 0],
       "format": Self.schema, "messages": [["role": "system", "content": Self.system],
         ["role": "user", "content": prompt, "images": [encodedImage]]]]
-    var request = URLRequest(url: ScreenAnalysisConfiguration.endpoint)
+    var request = URLRequest(url: endpoint.chatURL)
     request.httpMethod = "POST"; request.timeoutInterval = timeout
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -80,6 +100,7 @@ struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusP
       group.addTask { try await client.data(for: request) }
       group.addTask {
         try await Task.sleep(for: .seconds(timeout))
+        if backend == .remote { throw ScreenAnalysisError.remoteInferenceTimeout(timeout) }
         throw ScreenAnalysisError.inferenceTimeout(timeout)
       }
       defer { group.cancelAll() }
@@ -93,7 +114,9 @@ struct OllamaScreenAnalysisProvider: ScreenAnalysisProviding, VisionModelStatusP
     if let typed = error as? ScreenAnalysisError { return typed }
     guard let urlError = error as? URLError else { return error }
     switch urlError.code {
-    case .timedOut: return ScreenAnalysisError.inferenceTimeout(timeout)
+    case .timedOut:
+      return backend == .remote ? ScreenAnalysisError.remoteInferenceTimeout(timeout)
+        : ScreenAnalysisError.inferenceTimeout(timeout)
     case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost:
       return ScreenAnalysisError.connectionTimeout
     case .cancelled: return ScreenAnalysisError.cancelled

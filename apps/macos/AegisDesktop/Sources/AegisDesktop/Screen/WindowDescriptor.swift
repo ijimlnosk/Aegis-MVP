@@ -16,6 +16,11 @@ struct WindowDescriptor: Codable, Equatable, Identifiable, Sendable {
   let isActive: Bool
   let isOnScreen: Bool
   let bounds: WindowBounds
+
+  var canonicalApplication: String {
+    KnownApplicationRegistry.canonicalName(applicationName: applicationName,
+      bundleIdentifier: bundleIdentifier)
+  }
 }
 
 enum WindowResolutionError: LocalizedError {

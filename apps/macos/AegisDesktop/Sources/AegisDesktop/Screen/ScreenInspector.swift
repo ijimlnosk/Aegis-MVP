@@ -9,7 +9,7 @@ actor ScreenInspector {
   private let cacheLifetime: TimeInterval
 
   init(capture: ScreenCaptureProviding = ScreenCaptureService(),
-       provider: ScreenAnalysisProviding = OllamaScreenAnalysisProvider(),
+       provider: ScreenAnalysisProviding = VisionRoutingProvider(),
        redactor: ScreenRedacting = PassthroughScreenRedactor(),
        coordinator: VisionAnalysisCoordinator = VisionAnalysisCoordinator(),
        cacheLifetime: TimeInterval = 8) {
@@ -42,9 +42,14 @@ actor ScreenInspector {
       try Task.checkCancellation()
       await progress?(.optimizing)
       let redacted = try await redactor.redact(snapshot)
-      await progress?(.analyzing)
+      let backend: VisionBackend
+      if let routed = provider as? VisionBackendStatusProviding {
+        backend = await routed.backendStatus(refresh: false).configured
+      } else { backend = .local }
+      await progress?(.analyzing(backend))
       let inferenceStarted = ContinuousClock.now
       let analysis = try await provider.analyze(snapshot: redacted, trustedContext: trustedContext)
+      ScreenAnalysisDiagnostics.modelIdentity(analysis)
       let inferenceDuration = inferenceStarted.duration(to: .now)
       try Task.checkCancellation()
       let result = ScreenInspectionResult.format(snapshot: redacted, analysis: analysis,
@@ -68,6 +73,7 @@ actor ScreenInspector {
   func diagnostics() async -> String {
     let value = await capture.diagnostics()
     let state = await coordinator.status()
+    let backend = await (provider as? VisionBackendStatusProviding)?.backendStatus(refresh: true)
     let loaded = await (provider as? VisionModelStatusProviding)?.isModelLoaded()
     let profile = ScreenAnalysisConfiguration.resourceProfile()
     var lines = [value.format(provider: provider.availabilityDescription,
@@ -75,12 +81,25 @@ actor ScreenInspector {
       "최대 이미지: \(ScreenAnalysisConfiguration.maximumLongEdge(for: profile))px / \(ScreenAnalysisConfiguration.maximumPixels()) pixels",
       "메모리 압력: \(state.pressure.rawValue)", "활성 Vision 요청: \(state.active ? "yes" : "no")",
       "모델 로드됨: \(loaded.map { $0 ? "yes" : "no" } ?? "unknown")"]
+    if let backend {
+      lines += ["Vision backend: \(backend.configured.rawValue)",
+        "Vision endpoint: \(backend.endpoint.map { "\($0.host):\($0.port)" } ?? "invalid")",
+        "Vision model: \(backend.model)",
+        "Remote status: \(backend.availability.rawValue)",
+        "Local fallback: \(backend.fallbackEnabled ? "enabled" : "disabled")",
+        "Last backend: \(backend.lastBackend?.rawValue ?? "none")",
+        "Last failure: \(backend.lastFailure?.rawValue ?? "none")"]
+    }
     if let metrics = state.metrics {
       lines += ["마지막 이미지: \(metrics.dimensions.0)x\(metrics.dimensions.1)",
         "마지막 추론: \(metrics.inferenceDuration)",
         "예상 분석 크기: \(metrics.pixels) pixels / \(metrics.encodedBytes) bytes"]
     }
     return lines.joined(separator: "\n")
+  }
+
+  func visionBackendStatus(refresh: Bool) async -> VisionBackendStatus? {
+    await (provider as? VisionBackendStatusProviding)?.backendStatus(refresh: refresh)
   }
 
   private func failure(_ error: Error) -> ScreenInspectionResult {
@@ -98,5 +117,5 @@ private struct CachedScreenAnalysis {
 }
 
 enum ScreenAnalysisProgress: Sendable {
-  case lowMemory, capturingWindow, capturing, optimizing, analyzing
+  case lowMemory, capturingWindow, capturing, optimizing, analyzing(VisionBackend)
 }
