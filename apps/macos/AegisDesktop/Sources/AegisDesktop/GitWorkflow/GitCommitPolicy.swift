@@ -7,6 +7,7 @@ enum GitCommitPolicy {
 
   static func sensitive(_ path: String) -> Bool {
     let lower = path.lowercased(), name = URL(fileURLWithPath: lower).lastPathComponent
+    if [".env.example", ".env.sample", ".env.template"].contains(name) { return false }
     return name == ".env" || name.hasPrefix(".env.") || sensitiveNames.contains(where: lower.contains)
   }
 

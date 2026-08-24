@@ -28,6 +28,9 @@ enum GitCommitPlanner {
 
   private static func semanticKey(_ path: String) -> String? {
     let lower = path.lowercased()
+    if [".gitignore", ".env.example", "package.json", "tsconfig.json", "eslint.config.mjs"].contains(lower) {
+      return "project-config"
+    }
     if lower.contains("meallog") { return "meal-log" }
     if lower.contains("workoutsession") { return "workout-session" }
     if lower.hasPrefix("android/") { return "android" }
@@ -47,6 +50,7 @@ enum GitCommitPlanner {
 
   private static func description(_ key: String) -> (title: String, rationale: String, message: String, confidence: Double) {
     switch key {
+    case "project-config": ("프로젝트 설정 정리", "실행·검증에 필요한 프로젝트 설정 변경입니다.", "chore: 프로젝트 설정 정리", 0.9)
     case "meal-log": ("식단 요청 로그 정리", "식단 기록 로깅 구현과 테스트가 함께 변경되었습니다.", "fix: 식단 요청 로그에서 민감정보 제거", 0.95)
     case "workout-session": ("운동 세션 UI 정리", "운동 세션 화면과 스타일 변경입니다.", "refactor: 운동 세션 스테퍼 UI 정리", 0.9)
     case "android": ("Android 빌드 설정", "Android 프로젝트 설정 변경입니다.", "chore: Android 빌드 설정 조정", 0.85)
