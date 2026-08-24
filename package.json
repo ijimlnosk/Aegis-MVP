@@ -9,8 +9,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types src/**/*.test.ts apps/**/*.test.ts",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts apps/**/*.test.ts apps/**/*.test.js",
     "mac-agent": "node --env-file=.env.local --experimental-strip-types apps/mac-agent/src/server.ts",
+    "remote-gateway": "node --env-file=.env.local --experimental-strip-types apps/remote-gateway/server.ts",
     "server-agent": "node --env-file=.env.local --experimental-strip-types apps/server-agent/src/server.ts"
   },
   "dependencies": {
