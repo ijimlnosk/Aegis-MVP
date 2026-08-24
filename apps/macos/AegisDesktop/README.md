@@ -93,6 +93,11 @@ resource profile은 `balanced`이며 1280px longest edge, 150만 pixel, JPEG qua
 
 ```bash
 AEGIS_VISION_TIMEOUT_SECONDS=120
+AEGIS_OLLAMA_URL=http://<TAILSCALE_IP>:11434
+AEGIS_VISION_OLLAMA_URL=http://<TAILSCALE_IP>:11434
+AEGIS_VISION_LOCAL_FALLBACK=false
+AEGIS_OLLAMA_REMOTE_TIMEOUT_SECONDS=300
+AEGIS_VISION_REMOTE_TIMEOUT_SECONDS=300
 AEGIS_VISION_RESOURCE_PROFILE=balanced
 AEGIS_VISION_MAX_LONG_EDGE=1280
 AEGIS_VISION_MAX_PIXELS=1500000
@@ -101,6 +106,43 @@ AEGIS_VISION_KEEP_ALIVE_SECONDS=60
 AEGIS_VISION_MAX_WINDOWS=2
 ```
 
+### sol-server 원격 AI
+
+일반 대화와 planner는 `AEGIS_OLLAMA_URL`, Screen Awareness는
+`AEGIS_VISION_OLLAMA_URL`을 사용합니다. 두 URL은 독립적으로 설정하며 같은 서버를
+가리킬 수 있습니다. 둘 다 설정하지 않으면 로컬 Ollama로 자동 fallback하지 않습니다.
+
+```dotenv
+AEGIS_OLLAMA_URL=http://<TAILSCALE_IP>:11434
+AEGIS_VISION_OLLAMA_URL=http://<TAILSCALE_IP>:11434
+OLLAMA_MODEL=qwen2.5vl:3b
+AEGIS_VISION_MODEL=qwen2.5vl:3b
+AEGIS_VISION_LOCAL_FALLBACK=false
+AEGIS_OLLAMA_REMOTE_TIMEOUT_SECONDS=300
+AEGIS_VISION_REMOTE_TIMEOUT_SECONDS=300
+```
+
+원격 Ollama는 Tailscale 또는 명시적으로 제한한 로컬 LAN에서만 접근하게 구성하세요.
+향후 인증 reverse proxy를 의도적으로 추가할 수도 있습니다. 네트워크 경계 없이
+공용 인터페이스의 `0.0.0.0:11434`를 인터넷에 노출하지 마세요. Aegis는 원격으로
+보내기 전에 Mac에서 민감한 창을 차단하고 이미지를 축소해 JPEG 임시 파일로 만들며,
+분석 뒤 삭제합니다. sol-server에 이미지 저장이나 base64 로깅을 요청하지 않습니다.
+
+sol-server에서는 실제 주소를 저장소에 기록하지 말고 Ollama를 그 호스트의 Tailscale
+주소에만 바인딩한 뒤 작은 Vision 모델을 준비합니다.
+
+```bash
+OLLAMA_HOST=<TAILSCALE_IP>:11434 ollama serve
+ollama pull qwen2.5vl:3b
+```
+
+호스트 방화벽과 Tailscale ACL에서도 Mac만 11434 포트에 접근하도록 제한하세요.
+기존 Aegis Server Agent의 포트, 인증 토큰, endpoint는 이 설정과 무관하며 변경하지
+않습니다.
+
+현재 개발 구성에서는 로컬 fallback을 끕니다. planner와 Vision 요청은 공유 coordinator가
+직렬화하여 동시에 하나의 고비용 Ollama generation만 실행합니다.
+
 `열려 있는 창들 뭐 있어?`는 screenshot 없이 앱 이름, 창 제목, display, 활성 상태만
 보여줍니다. 특정 창 분석은 exact 앱 이름, 명시적으로 설정한 alias, exact 창 제목,
 현재 활성 창 순으로만 해석하며 fuzzy matching은 사용하지 않습니다. 추가 alias는
@@ -108,6 +150,34 @@ AEGIS_VISION_MAX_WINDOWS=2
 기본 최대 2개까지 순차 분석하고 민감한 앱은 목록과 캡처에서 제외합니다.
 
 ## 개발 실행
+
+## Phase 8 UI 제어
+
+UI 제어는 macOS Accessibility API로만 대상을 탐색하고 실행합니다. 좌표 클릭, 임의
+키 코드, AppleScript, shell 실행은 capability로 제공하지 않습니다. 처음 사용할 때
+시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용에서 AegisDesktop을 허용하세요.
+권한이 없거나 취소되면 앱은 계속 실행되고 deterministic 읽기 도구는 유지됩니다.
+
+앱과 창은 `KnownApplicationRegistry`, bundle identifier, ScreenCaptureKit metadata로
+다시 해석합니다. Accessibility tree는 최대 깊이 5, 요소 40개, 텍스트 160자로 제한하며
+메모리에 저장하지 않습니다. 텍스트 입력, 버튼 실행, 메뉴 선택, 창 닫기는 승인을
+요구합니다. 활성화, 창 focus, UI 목록, 고정된 navigation shortcut은 자동 실행됩니다.
+암호·보안 필드와 generic UI 메시지 전송은 차단됩니다.
+
+지원되는 VSCode workflow:
+
+```text
+PTFriends VSCode 창에서 build.gradle 열어줘
+→ trusted window focus
+→ allowlisted Quick Open
+→ 텍스트 입력 승인
+→ build.gradle 입력 및 confirm
+→ trusted window title 검증
+```
+
+`UI 제어 상태 보여줘`는 Accessibility 권한, 활성 앱/창, coordinator 상태와 adapter
+목록을 보여줍니다. `현재 VSCode 창에서 조작 가능한 UI 보여줘`는 bounded semantic
+목록만 표시하며 raw Accessibility tree나 secure value를 출력하지 않습니다.
 
 프로젝트 루트에서 다음 명령을 실행합니다.
 
@@ -137,6 +207,44 @@ apps/macos/AegisDesktop/Scripts/run-app.sh release
 ```
 
 실행 전 `ollama serve`가 필요합니다. 현재 응답은 텍스트 채팅에만 표시됩니다.
+
+## Phase 9 Safe Coding Agent
+
+등록된 프로젝트의 코드 리뷰는 Codex `read-only` sandbox에서 승인 없이 실행됩니다. 소스 수정은
+`workspace-write`로 제한되고 Codex 실행 전에 Aegis 승인 카드가 표시됩니다. Aegis는 Git 전후
+상태와 지원되는 typecheck/lint/test/build 결과를 독립적으로 확인하며 commit이나 push는 하지 않습니다.
+
+```bash
+AEGIS_CODING_TASK_TIMEOUT_SECONDS=900
+AEGIS_AUTONOMOUS_MAX_CHANGED_FILES=5
+AEGIS_AUTONOMOUS_MAX_TASKS_PER_REQUEST=1
+AEGIS_AUTONOMOUS_REPAIR_ATTEMPTS=1
+
+Phase 10 autonomous development is user-triggered only. It selects one small task in a
+trusted project, presents the candidate without writing, and pauses for approval before
+Codex workspace-write. Git attribution and configured validation determine success. A
+related validation failure may trigger at most one repair within the same file limit;
+commit, push, deploy, server mutation, and proactive coding remain disabled.
+AEGIS_CODING_AGENT_PROVIDER=codex
+AEGIS_CODING_AGENT_FALLBACK=none
+AEGIS_CODING_MAX_CHANGED_FILES=20
+```
+
+기존 dirty 파일은 작업 변경으로 귀속하거나 자동 롤백하지 않습니다. 롤백은 기존 변경과 분리되고
+작업 이후 상태가 바뀌지 않은 tracked 파일에만 허용됩니다.
+
+## Phase 12 Safe Git Workflow
+
+커밋 계획은 등록된 프로젝트의 Git snapshot과 bounded diff metadata만 읽어 논리 그룹을
+제안합니다. 계획 단계에서는 stage하지 않습니다. 커밋 승인은 계획 ID, branch, 정확한 파일
+집합에 묶이며 승인 뒤 snapshot이 달라지면 무효화됩니다. 실행은 그룹별 `git add -- <files>`와
+고정된 commit 인자만 사용하고 기존 staged 변경, 민감 파일, 대용량/바이너리 파일을 자동으로
+포함하지 않습니다.
+
+push는 커밋과 별도의 remote-mutation 승인이 필요합니다. 현재 branch의 일반 push만 지원하며
+force/tag/ref 삭제와 main/master/production/release 직접 push는 차단됩니다. CI와 PR은 설치된
+GitHub CLI 인증을 이용한 읽기 전용 상태 조회만 지원하고 PR 생성·merge·deploy는 지원하지 않습니다.
+Remote Gateway 요청도 같은 AegisDesktop 계획과 승인 상태를 사용합니다.
 
 ## Server Agent 설정
 

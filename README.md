@@ -4,7 +4,7 @@
 
 ## 현재 가능한 것
 
-- Ollama 기반 로컬 AI 대화와 도구 호출
+- 환경 설정된 Ollama 기반 AI 대화와 도구 호출
 - F5-TTS 기반 개인 참조 음성 응답 재생
 - registry에 설정된 여러 프로젝트의 `git status` 조회
 - 승인 후 `npm run typecheck` 실행
@@ -46,6 +46,18 @@ Ubuntu에서는 저장소와 환경 설정을 배치한 뒤 `npm run server-agen
 다른 호스트에서 접근할 경우 방화벽 또는 사설망으로 4319 포트를 제한하고
 `SERVER_AGENT_HOST`를 필요한 인터페이스에만 지정하세요. 시스템·Docker·Git 상태와
 로그 조회는 자동 실행되며, 컨테이너 시작·중지·재시작은 화면 승인을 거칩니다.
+
+## Tailscale 원격 제어
+
+원격 게이트웨이는 기본적으로 비활성화되어 있습니다. 32자 이상의 랜덤
+`AEGIS_REMOTE_TOKEN`을 설정하고 `AEGIS_REMOTE_HOST`를 Mac의 Tailscale 주소로
+명시한 뒤 `npm run remote-gateway`로 실행합니다. public/wildcard bind는 거부되며,
+자연어 명령만 loopback AegisDesktop command bridge로 전달됩니다.
+
+휴대폰에서는 `http://<TAILSCALE_IP>:8790/`을 열어 토큰으로 연결합니다. 토큰은 페이지
+소스나 영구 브라우저 저장소에 넣지 않습니다. Mac이 깨어 있고 AegisDesktop,
+command bridge, Tailscale이 모두 실행 중일 때만 사용할 수 있습니다. 초기 버전은
+정규화된 텍스트만 반환하며 원본 스크린샷은 전송하지 않습니다.
 
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
 참조 음성 및 `.aegis/voices/reference.txt`의 정확한 대본, 그리고 F5-TTS 전용
