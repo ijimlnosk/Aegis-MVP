@@ -31,10 +31,34 @@ final class DevelopmentSessionCoordinator {
   }
 
   func recap(project: String) throws -> String {
-    let report = try ProjectHealthService.lightweight(project: project, repository: memory)
-    let session = try sessions.sessions(project: project).first
-    let activity = session?.summary ?? session.map { "\($0.startedAt.formatted())에 시작한 세션이 진행 중입니다." } ?? "저장된 개발 세션이 없습니다."
-    return ProjectHealthService.format(report) + "\nAegis 활동: \(activity)"
+    DevelopmentRecapFormatter.format(try recapResult(project: project))
+  }
+
+  func recapResult(project: String) throws -> DevelopmentRecapResult {
+    let url = try ProjectCommandPolicy.projectURL(project, repository: memory)
+    let snapshot = try ProjectInspector.snapshot(at: url)
+    var warnings: [String] = snapshot.clean ? [] : ["현재 미커밋 변경 \(snapshot.changedFiles.count)건이 있습니다."]
+    let recentCommits: String?
+    do { recentCommits = try ProjectInspector.recentCommits(at: url, count: 5) }
+    catch { recentCommits = nil; warnings.append("최근 커밋을 확인할 수 없습니다.") }
+    let session: DevelopmentSession?
+    do { session = try sessions.sessions(project: project).first }
+    catch { session = nil; warnings.append("DevelopmentSession 정보를 확인할 수 없습니다.") }
+    let activity = session?.summary ?? session.map { "\($0.startedAt.formatted())에 시작한 세션이 진행 중입니다." }
+    return .init(project: project, executionStatus: .succeeded, branch: snapshot.branch,
+      projectState: snapshot.clean ? .clean : .dirty, changedFiles: snapshot.changedFiles,
+      recentCommits: recentCommits, sessionSummary: activity,
+      recentAutonomousTask: recentAutonomousHistory(project: project), warnings: warnings)
+  }
+
+  private func recentAutonomousHistory(project: String) -> AutonomousDevelopmentHistory? {
+    let decoder = JSONDecoder()
+    return (try? memory.records(type: .actionHistory))?.compactMap { record in
+      guard record.key.hasPrefix("autonomous:"), let data = record.value.data(using: .utf8),
+        let value = try? decoder.decode(AutonomousDevelopmentHistory.self, from: data),
+        value.projectId == project.lowercased() else { return nil }
+      return value
+    }.sorted { $0.timestamp > $1.timestamp }.first
   }
 
   func record(project: String, action: String) throws {
