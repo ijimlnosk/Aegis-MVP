@@ -26,24 +26,32 @@ enum AgentPlanner {
     }
     if let serverPlan = ServerIntentParser.parse(memory.request) { return AgentPlan(step: serverPlan) }
     let content = plannerContent(request: memory.request, memories: memory.records)
-    let generated = try await Ollama.structured(system: AgentPlannerPrompt.system, content: content, schema: schema)
+    let generated = try await generate(system: AgentPlannerPrompt.system, content: content)
     let first = PlanDependencyNormalizer.normalize(generated)
     let firstErrors = AgentPlanValidator.errors(in: first, for: request)
     if firstErrors.isEmpty { return MemoryRetriever.applyBrowserPreference(to: first, request: request, context: memory) }
-    let retried = try await Ollama.structured(
+    let retried = try await generate(
       system: AgentPlannerPrompt.system + "\n이전 계획이 유효하지 않았다. 필수 필드와 원래 요청 의도를 확인해 한 번만 수정한다.",
-      content: content + "\n\n이전 계획 오류: \(firstErrors.joined(separator: ", "))", schema: schema)
+      content: content + "\n\n이전 계획 오류: \(firstErrors.joined(separator: ", "))")
     let retry = PlanDependencyNormalizer.normalize(retried)
     let retryErrors = AgentPlanValidator.errors(in: retry, for: request)
     guard retryErrors.isEmpty else { throw AgentPlannerError.invalidPlan(retryErrors) }
     return MemoryRetriever.applyBrowserPreference(to: retry, request: request, context: memory)
   }
 
+  private static func generate(system: String, content: String) async throws -> AgentPlan {
+    if CodexPlannerConfiguration.isEnabled {
+      do { return try await CodexPlanner().plan(system: system, content: content, schema: schema) }
+      catch { /* Preserve the configured local planner as a bounded availability fallback. */ }
+    }
+    return try await Ollama.structured(system: system, content: content, schema: schema)
+  }
+
   private static func plannerContent(request: String, memories: [MemoryRecord]) -> String {
     "참고용 메모리 데이터:\n\(AgentPlannerPrompt.memoryData(memories))\n\n현재 요청: \(request)"
   }
 
-  private static let schema: [String: Any] = [
+  static let schema: [String: Any] = [
     "type": "object",
     "properties": [
       "steps": ["type": "array", "minItems": 0, "maxItems": AgentPlan.maximumSteps,
