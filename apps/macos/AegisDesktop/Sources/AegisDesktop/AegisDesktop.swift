@@ -365,7 +365,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       }
       return
     }
-    if CodingResultFollowUpResolver.isDetailedLintQuestion(message) {
+    let semanticFollowUp = SemanticRouter.followUp(for: message,
+      hasCodingFindings: !codingFindings.isEmpty)
+    if semanticFollowUp?.kind == .detailedLint {
       busy = true
       Task {
         let latest = await codingCoordinator.lastResult
@@ -387,13 +389,14 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       }
       return
     }
-    if CodingResultFollowUpResolver.isValidationFixRequest(message) {
+    if semanticFollowUp?.kind == .fixValidation {
       busy = true
       Task {
         let latest = await codingCoordinator.lastResult
         let saved = conversationEvents.latestValidationResponse(
           sessionId: conversationSessionID, excluding: activeConversationTurnID)
-        let project = latest.flatMap {
+        let project = ProjectEntityResolver.resolve(in: message, repository: memoryStore.repository)
+          ?? latest.flatMap {
           ProjectEntityResolver.resolve(name: $0.project, repository: memoryStore.repository)
         } ?? saved.flatMap {
           ProjectEntityResolver.resolve(in: $0, repository: memoryStore.repository)
@@ -408,7 +411,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       }
       return
     }
-    if CodingResultFollowUpResolver.isValidationQuestion(message) {
+    if semanticFollowUp?.kind == .explainValidation {
       busy = true
       Task {
         let result = await codingCoordinator.lastResult
@@ -439,7 +442,8 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       !codingFindings.isEmpty, !codingFindings.contains(where: { $0.projectId == project.name.lowercased() }) {
       codingFindings.removeAll(); activeCodingContinuation = nil
     }
-    if let continuation = CodingContinuationIntentResolver.resolve(message,
+    if semanticFollowUp?.kind == .codingContinuation,
+      let continuation = CodingContinuationIntentResolver.resolve(message,
       findings: codingFindings, explicitProject: explicitCodingProject) {
       switch continuation {
       case .write(let intent):
@@ -510,45 +514,37 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     recordActivity("AI 백엔드 행동 계획 생성")
     Task {
       do {
-        if DeveloperSemanticResolver.shouldClassify(message, repository: memoryStore.repository),
-          let project = ProjectEntityResolver.resolve(in: message, repository: memoryStore.repository) {
-          let decision: DeveloperSemanticDecision
+        if let candidate = SemanticRouter.candidate(for: message,
+          repository: memoryStore.repository, gitContext: gitWorkflowContext) {
+          let decision: SemanticRouteDecision
           do {
-            decision = try await DeveloperSemanticResolver.classify(message, project: project)
+            decision = try await SemanticRouter.classify(message, candidate: candidate,
+              gitContext: gitWorkflowContext)
           } catch {
             busy = false
-            speak("개발 요청을 분류하지 못했습니다. 코드 조사인지 실제 수정인지 다시 말씀해 주세요.",
-              role: .error)
+            speak(SemanticRouter.failureMessage(for: candidate), role: .error)
             return
           }
           busy = false
-          switch DeveloperSemanticResolver.resolve(decision, request: message, project: project,
-            repository: memoryStore.repository) {
-          case .plan(let plan): execute(plan, request: message)
-          case .message(let value): speak(value)
-          }
-          return
-        }
-        if GitWorkflowSemanticResolver.shouldClassify(message, context: gitWorkflowContext) {
-          let decision: GitFollowUpDecision
-          do {
-            decision = try await GitWorkflowSemanticResolver.classify(message,
-              context: gitWorkflowContext)
-          } catch {
-            busy = false
-            speak("커밋 후속 요청을 분류하지 못했습니다. 계획을 다시 만들지, 실행할지 말씀해 주세요.",
-              role: .error)
-            return
-          }
-          if let continuation = GitWorkflowSemanticResolver.resolve(decision, request: message,
-            repository: memoryStore.repository, context: &gitWorkflowContext) {
-            busy = false
-            switch continuation {
+          switch decision {
+          case .developer(let project, let developer):
+            switch DeveloperSemanticResolver.resolve(developer, request: message, project: project,
+              repository: memoryStore.repository) {
             case .plan(let plan): execute(plan, request: message)
             case .message(let value): speak(value)
             }
-            return
+          case .gitWorkflow(let git):
+            if let continuation = GitWorkflowSemanticResolver.resolve(git, request: message,
+              repository: memoryStore.repository, context: &gitWorkflowContext) {
+              switch continuation {
+              case .plan(let plan): execute(plan, request: message)
+              case .message(let value): speak(value)
+              }
+            } else {
+              speak("커밋 후속 요청을 이해하지 못했습니다. 요청을 더 구체적으로 말씀해 주세요.")
+            }
           }
+          return
         }
         if let developerPlan = DeveloperIntentResolver.plan(for: message,
           repository: memoryStore.repository) {

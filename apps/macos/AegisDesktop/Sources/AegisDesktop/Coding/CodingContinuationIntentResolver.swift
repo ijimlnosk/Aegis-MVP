@@ -31,6 +31,16 @@ enum CodingContinuationIntentResolver {
   private static let continues = ["이어서 진행", "계속 진행", "계속해", "계속 해", "마저 해",
     "마저해", "이어가", "이어 가", "작업 추가해", "작업 추가 시켜"]
 
+  static func isPotentialFollowUp(_ request: String) -> Bool {
+    let text = request.lowercased()
+    return references.contains(where: text.contains) || continues.contains(where: text.contains)
+  }
+
+  static func requestsMutation(_ request: String) -> Bool {
+    let text = request.lowercased()
+    return writes.contains(where: text.contains) || continues.contains(where: text.contains)
+  }
+
   static func resolve(_ request: String, findings: [CodingFindingContext],
                       explicitProject: ProjectEntity? = nil) -> CodingContinuationResolution? {
     let text = request.lowercased()

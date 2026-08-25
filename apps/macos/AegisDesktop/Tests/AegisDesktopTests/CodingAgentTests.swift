@@ -173,7 +173,8 @@ private enum CodingTaskCoordinatorWithResult {
 }
 
 @Test func validationFixFollowUpCreatesProposalAndApprovedWrite() {
-  let requests = ["build 추가하자", "린트 경고 고쳐줘", "unsupported 항목 해결해"]
+  let requests = ["build 추가하자", "린트 경고 고쳐줘", "unsupported 항목 해결해",
+    "수정 가능한 경고는 수정하자"]
   for request in requests {
     #expect(CodingResultFollowUpResolver.isValidationFixRequest(request))
     let plan = CodingResultFollowUpResolver.fixPlan(request: request, project: "PTFriends")
