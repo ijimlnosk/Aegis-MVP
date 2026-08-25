@@ -8,7 +8,7 @@ extension AegisAgent {
       do {
         let root = try ProjectCommandPolicy.projectURL(project, repository: memoryStore.repository)
         let result = try await executeGitAction(step.action, project: project, root: root,
-                                                request: request)
+          request: request, stepContent: step.content)
         busy = false
         speak(result)
         completeCurrentStep(succeeded: true, result: result)
@@ -28,7 +28,7 @@ extension AegisAgent {
   }
 
   private func executeGitAction(_ action: AgentAction, project: String, root: URL,
-                                request: String) async throws -> String {
+                                request: String, stepContent: String?) async throws -> String {
     switch action {
     case .inspectGitDiff:
       let snapshot = try CodingGitInspector.snapshot(at: root)
@@ -36,7 +36,7 @@ extension AegisAgent {
         + snapshot.changedFiles.prefix(50).map { "- \($0)" }.joined(separator: "\n")
     case .proposeCommitPlan:
       if let existing = gitWorkflowContext.plan,
-        !request.contains("새 계획"), !request.contains("다시 계획") {
+        !isCommitReplanRequest(request, stepContent: stepContent) {
         let current = try CodingGitInspector.snapshot(at: root)
         guard current.branch == existing.branch, current.entries == existing.baseSnapshot.entries else {
           gitWorkflowContext.state = .invalidated
@@ -113,5 +113,11 @@ extension AegisAgent {
     developerValidationResults[project.lowercased()] = Dictionary(
       uniqueKeysWithValues: report.checks.map { ($0.check, $0) })
     return report
+  }
+
+  private func isCommitReplanRequest(_ request: String, stepContent: String?) -> Bool {
+    let text = ([request, stepContent ?? ""].joined(separator: " "))
+      .lowercased().replacingOccurrences(of: " ", with: "")
+    return ["새계획", "다시계획", "새로만들", "다시만들"].contains(where: text.contains)
   }
 }

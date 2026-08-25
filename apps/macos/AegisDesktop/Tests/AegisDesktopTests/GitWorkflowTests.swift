@@ -227,6 +227,14 @@ private func gitSnapshot(_ paths: [String], branch: String = "dev",
   #expect(rebuilt.steps.map(\.action) == [.proposeCommitPlan])
   #expect(rebuilt.steps.first?.project == "PTFriends")
   #expect(rebuilt.steps.first?.content?.contains("새 계획") == true)
+
+  var shortConfirmation = GitWorkflowContext(sessionId: "S1"); shortConfirmation.retain(plan)
+  shortConfirmation.state = .invalidated
+  guard case .plan(let confirmed) = GitWorkflowContinuationResolver.resolve("만들어",
+    repository: repository, context: &shortConfirmation) else {
+    Issue.record("short replan confirmation missing"); return
+  }
+  #expect(confirmed.steps.first?.content?.contains("새 계획") == true)
 }
 
 @Test func sessionsCannotAccessAnotherSessionsPlanAndCommandIdentityIsIrrelevant() throws {
