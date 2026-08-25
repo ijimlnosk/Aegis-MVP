@@ -262,6 +262,22 @@ test("registered credential survives gateway store restart and master rotation",
   } finally { rmSync(directory, { recursive: true }); }
 });
 
+test("frequent authentication does not persist lastSeenAt on every request", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aegis-devices-"));
+  try {
+    const path = join(directory, "devices.json");
+    const store = new RemoteDeviceStore(path);
+    const issued = store.register("Polling Phone");
+    const registeredAt = store.storedRecordsForTesting()[0].lastSeenAt;
+
+    store.authenticate(issued.device.id, issued.credential);
+    store.authenticate(issued.device.id, issued.credential);
+
+    assert.equal(store.storedRecordsForTesting()[0].lastSeenAt, registeredAt);
+    assert.equal(new RemoteDeviceStore(path).storedRecordsForTesting()[0].lastSeenAt, registeredAt);
+  } finally { rmSync(directory, { recursive: true }); }
+});
+
 function command(id: string): RemoteCommandRequest {
   return { id, sessionId: "session", text: "PTFriends 어디까지 했지?", timestamp: new Date().toISOString() };
 }

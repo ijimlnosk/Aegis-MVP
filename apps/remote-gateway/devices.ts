@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RemoteDevice, RemoteDeviceView } from "./models.ts";
 
+const LAST_SEEN_PERSIST_INTERVAL_MS = 60_000;
+
 export class RemoteDeviceStore {
   private devices: RemoteDevice[];
   private readonly path?: string;
@@ -26,7 +28,11 @@ export class RemoteDeviceStore {
     if (!device || !verifyCredential(credential, device.credentialHash)) return { error: "deviceCredentialInvalid" };
     if (device.revokedAt) return { error: "deviceRevoked" };
     if (!device.enabled) return { error: "deviceDisabled" };
-    device.lastSeenAt = new Date().toISOString(); this.save();
+    const now = Date.now();
+    const lastSeenAt = Date.parse(device.lastSeenAt);
+    if (!Number.isFinite(lastSeenAt) || now - lastSeenAt >= LAST_SEEN_PERSIST_INTERVAL_MS) {
+      device.lastSeenAt = new Date(now).toISOString(); this.save();
+    }
     return { device: publicDevice(device) };
   }
 
