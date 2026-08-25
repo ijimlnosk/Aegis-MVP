@@ -5,6 +5,7 @@ final class DesktopBridgeSession {
   let agent = AegisAgent()
   private var commandResults: [String: DesktopBridgeResult] = [:]
   private var commandStartedAt: [String: Date] = [:]
+  private var commandMessageIndex: [String: Int] = [:]
 
   init(sessionID: String) {
     agent.conversationSessionID = sessionID
@@ -15,6 +16,7 @@ final class DesktopBridgeSession {
     if let existing = commandResults[id] { return existing }
     commandStartedAt[id] = .now
     let index = agent.chat.messages.count
+    commandMessageIndex[id] = index
     agent.send(text)
     let result = await awaitResult(after: index)
     commandResults[id] = result
@@ -36,6 +38,15 @@ final class DesktopBridgeSession {
       return DesktopBridgeResult(status: "awaitingApproval", messages: [], pendingApproval: pendingApprovalCard(),
         progress: bridgeProgress(phase: "awaitingApproval", message: "승인을 기다리고 있습니다.",
           step: currentStep(), startedAt: startedAt, cancellable: false))
+    }
+    if !agent.busy, agent.planExecutor == nil, let index = commandMessageIndex[commandId] {
+      let messages = visibleMessages(after: index)
+      let failed = messages.contains(where: { $0.hasPrefix("오류: ") })
+      let result = DesktopBridgeResult(status: failed ? "failed" : "completed",
+        messages: messages, pendingApproval: nil,
+        failureCode: failed ? DesktopFailureClassifier.code(for: messages) : nil)
+      commandResults[commandId] = result
+      return result
     }
     let step = currentStep(), detail = phase(for: step?.action)
     return DesktopBridgeResult(status: agent.busy ? "running" : "planning", messages: [], pendingApproval: nil,
@@ -76,8 +87,11 @@ final class DesktopBridgeSession {
       }
       try? await Task.sleep(for: .milliseconds(20))
     }
-    return DesktopBridgeResult(status: "failed", messages: ["AegisDesktop 작업 시간이 초과되었습니다."], pendingApproval: nil,
-                               failureCode: "timeout")
+    let step = currentStep(), detail = phase(for: step?.action)
+    return DesktopBridgeResult(status: "running", messages: visibleMessages(after: index),
+      pendingApproval: nil, progress: bridgeProgress(phase: detail.0,
+        message: "작업이 계속 진행 중입니다. 완료 결과를 기다리고 있습니다.", step: step,
+        startedAt: .now, cancellable: true))
   }
 
   private func visibleMessages(after index: Int) -> [String] {
