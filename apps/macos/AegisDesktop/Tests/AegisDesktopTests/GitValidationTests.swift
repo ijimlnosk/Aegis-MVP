@@ -74,6 +74,24 @@ private func report(_ checks: [ProjectValidationResult],
   #expect(message.contains("quickExerciseLog.test.ts:13"))
 }
 
+@Test func failedCommitValidationRepairFollowUpUsesCodingPlanWithoutLLM() throws {
+  let root = try DeveloperTestSupport.gitProject(); defer { try? FileManager.default.removeItem(at: root) }
+  let repository = try DeveloperTestSupport.repositories(project: root).0
+  var context = GitWorkflowContext(sessionId: "remote-S1")
+  context.plan = GitCommitPlan(projectId: "PTFriends", branch: "main",
+    baseSnapshot: .init(head: "abc", branch: "main", entries: [], unstagedChanges: [],
+      stagedChanges: [], trackedFiles: []), groups: [],
+    unassignedFiles: [], warnings: [])
+  context.lastValidationReport = report([check(.typecheck, .passed), check(.lint, .failed),
+    check(.test, .failed), check(.build, .passed)])
+  guard case .plan(let plan) = GitWorkflowContinuationResolver.resolve(
+    "수정하자", repository: repository, context: &context) else {
+    Issue.record("failed validation repair follow-up missing"); return
+  }
+  #expect(plan.steps.map(\.action) == [.proposeCodingTask, .executeCodingTask])
+  #expect(plan.steps.last?.codingMode == .workspaceWrite)
+}
+
 @Test func failedValidationCreatesNoCommitAndLeavesIndexUnchanged() throws {
   let root = try DeveloperTestSupport.gitProject(); defer { try? FileManager.default.removeItem(at: root) }
   try "changed\n".write(to: root.appending(path: "README.md"), atomically: true, encoding: .utf8)

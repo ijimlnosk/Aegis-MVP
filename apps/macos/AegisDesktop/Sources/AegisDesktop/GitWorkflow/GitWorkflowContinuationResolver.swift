@@ -16,6 +16,10 @@ enum GitWorkflowContinuationResolver {
       return .message(GitValidationFormatter.format(report,
         failedCommit: !report.allowsCommit))
     }
+    if context.lastValidationReport?.allowsCommit == false, wantsValidationRepair(text),
+      let project = context.plan?.projectId {
+      return .plan(CodingResultFollowUpResolver.fixPlan(request: request, project: project))
+    }
     guard isContinuation(text) else { return nil }
     if context.plan == nil,
       ProjectEntityResolver.resolve(in: request, repository: repository) != nil { return nil }
@@ -60,6 +64,10 @@ enum GitWorkflowContinuationResolver {
   }
   private static func wantsExecution(_ text: String) -> Bool {
     ["진행", "해", "커밋"].contains(where: text.contains) && !text.contains("빼줘")
+  }
+  private static func wantsValidationRepair(_ text: String) -> Bool {
+    ["수정하자", "수정해", "고치자", "고쳐", "해결하자", "해결해", "그렇게하자"]
+      .contains(where: text.contains)
   }
   private static func hasSelectionOrExclusion(_ text: String) -> Bool {
     ["1번", "2번", "3번", "첫번째", "두번째", "세번째", "제외", "빼"].contains(where: text.contains)

@@ -20,8 +20,9 @@ enum CodingResultFollowUpResolver {
     let text = request.lowercased().replacingOccurrences(of: " ", with: "")
     let target = ["검증", "경고", "lint", "린트", "build", "빌드", "typecheck", "타입체크",
       "test", "테스트", "unsupported"].contains(where: text.contains)
-    let mutation = ["추가하자", "추가해", "고치자", "고쳐", "수정하자", "수정해",
-      "해결하자", "해결해", "지원하게", "되게해"].contains(where: text.contains)
+    let mutation = ["추가하자", "추가해", "고치자", "고쳐", "고치고", "수정하자", "수정해",
+      "수정하고", "수정후", "해결하자", "해결해", "해결하고", "지원하게", "되게해"]
+      .contains(where: text.contains)
     return target && mutation
   }
 
