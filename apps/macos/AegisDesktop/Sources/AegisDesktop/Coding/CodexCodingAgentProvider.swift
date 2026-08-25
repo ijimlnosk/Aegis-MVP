@@ -20,10 +20,13 @@ struct CodexCodingAgentProvider: CodingAgentProvider {
     guard isAvailable() else {
       return failure("실행 파일을 찾지 못했습니다.")
     }
+    let invocation = arguments(for: task, policy: policy)
+    if let worker = await CodexWorkerRunner.execute(task: task, executable: executable,
+      arguments: invocation, timeout: timeout) { return worker }
     let process = Process(), output = Pipe(), errors = Pipe()
     process.executableURL = executable
     process.currentDirectoryURL = task.projectRoot
-    process.arguments = arguments(for: task, policy: policy)
+    process.arguments = invocation
     process.environment = sanitizedEnvironment()
     process.standardOutput = output; process.standardError = errors
     do { try process.run() } catch {

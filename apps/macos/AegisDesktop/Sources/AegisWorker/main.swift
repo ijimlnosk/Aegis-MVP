@@ -22,6 +22,10 @@ case "--heartbeat" where arguments.count == 5:
   let store = try WorkerLeaseStore(databaseURL: URL(fileURLWithPath: arguments[1]))
   response = WorkerLeaseResponse(acquired: try store.heartbeat(commandId: arguments[2],
     sessionId: arguments[3], owner: arguments[4]))
+case "--execute-read-only" where arguments.count == 3:
+  try WorkerReadOnlyExecutor.run(requestURL: URL(fileURLWithPath: arguments[1]),
+    resultURL: URL(fileURLWithPath: arguments[2]))
+  response = WorkerLeaseResponse(acquired: true)
 default:
   FileHandle.standardError.write(Data("Unsupported AegisWorker command.\n".utf8))
   exit(2)
