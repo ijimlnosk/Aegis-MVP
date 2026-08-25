@@ -7,6 +7,7 @@ final class DesktopBridgeServer {
   private var listener: NWListener?
   private var sessions: [String: DesktopBridgeSession] = [:]
   private(set) var status = "stopped"
+  var hasActiveCommands: Bool { sessions.values.contains(where: \.hasActiveCommand) }
 
   init(configuration: DesktopBridgeConfiguration = .load()) { self.configuration = configuration }
 

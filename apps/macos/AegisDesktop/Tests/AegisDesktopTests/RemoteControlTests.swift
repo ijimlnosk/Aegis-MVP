@@ -57,4 +57,5 @@ import Testing
   #expect(first.agent.gitWorkflowContext.sessionId == "S1")
   #expect(second.agent.gitWorkflowContext.sessionId == "S2")
   #expect(first.agent !== second.agent)
+  #expect(!first.hasActiveCommand)
 }

@@ -6,12 +6,13 @@ import SwiftUI
 
 @main
 struct AegisDesktopApp: App {
+  @NSApplicationDelegateAdaptor(AegisApplicationDelegate.self) private var applicationDelegate
   @StateObject private var agent = AegisAgent()
 
   var body: some Scene {
     WindowGroup("Aegis") {
       AegisView(agent: agent).frame(minWidth: 520, minHeight: 560)
-        .onAppear { agent.start() }
+        .onAppear { applicationDelegate.agent = agent; agent.start() }
     }
     MenuBarExtra("Aegis", systemImage: "waveform") {
       AegisView(agent: agent).frame(width: 380, height: 440)
@@ -33,7 +34,8 @@ struct AegisView: View {
         Spacer()
         Label(agent.busy ? "처리 중" : "준비됨", systemImage: "circle.fill")
           .foregroundStyle(agent.busy ? .orange : .green)
-        Button("종료") { NSApplication.shared.terminate(nil) }
+        Button("백그라운드") { NSApplication.shared.keyWindow?.close() }
+          .help("창만 닫고 원격 작업과 Aegis Bridge는 계속 실행합니다.")
       }
       .padding()
       Divider()
@@ -41,6 +43,21 @@ struct AegisView: View {
         cancel: agent.cancelCurrentOperation,
         approve: agent.approveChatAction, reject: agent.rejectChatAction)
     }
+  }
+}
+
+@MainActor
+final class AegisApplicationDelegate: NSObject, NSApplicationDelegate {
+  weak var agent: AegisAgent?
+
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard agent?.hasActiveBackgroundWork == true else { return .terminateNow }
+    let alert = NSAlert()
+    alert.messageText = "진행 중인 Aegis 작업이 있습니다."
+    alert.informativeText = "종료하면 현재 작업은 중단됩니다. 창만 닫으려면 취소를 누르세요."
+    alert.addButton(withTitle: "취소")
+    alert.addButton(withTitle: "작업 중단 후 종료")
+    return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
   }
 }
 
@@ -112,6 +129,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   private var speechRecoveryTimer: Timer?
   private let finishWords = ["답변해", "대답해", "응답해"]
   private let speechVolume: Float = 0.45
+  var hasActiveBackgroundWork: Bool { busy || desktopBridge.hasActiveCommands }
 
   override init() {
     super.init()

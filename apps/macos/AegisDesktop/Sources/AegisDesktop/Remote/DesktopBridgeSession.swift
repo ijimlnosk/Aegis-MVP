@@ -8,6 +8,12 @@ final class DesktopBridgeSession {
   private var commandResults: [String: DesktopBridgeResult] = [:]
   private var commandStartedAt: [String: Date] = [:]
   private var commandMessageIndex: [String: Int] = [:]
+  var hasActiveCommand: Bool {
+    commandStartedAt.keys.contains { id in
+      guard let status = commandResults[id]?.status else { return true }
+      return !["completed", "failed", "cancelled"].contains(status)
+    }
+  }
 
   init(sessionID: String, jobs: CommandJobStore = CommandJobStore()) {
     self.sessionID = sessionID
