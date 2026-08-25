@@ -5,8 +5,10 @@ let package = Package(
   name: "AegisDesktop",
   platforms: [.macOS(.v14)],
   targets: [
-    .executableTarget(name: "AegisDesktop"),
-    .testTarget(name: "AegisDesktopTests", dependencies: ["AegisDesktop"]),
+    .target(name: "AegisWorkerProtocol"),
+    .executableTarget(name: "AegisWorker", dependencies: ["AegisWorkerProtocol"]),
+    .executableTarget(name: "AegisDesktop", dependencies: ["AegisWorkerProtocol"]),
+    .testTarget(name: "AegisDesktopTests", dependencies: ["AegisDesktop", "AegisWorkerProtocol"]),
   ],
   swiftLanguageModes: [.v5]
 )

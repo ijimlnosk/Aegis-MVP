@@ -28,9 +28,11 @@ BIN_DIR="$(swift build --package-path "$PACKAGE_DIR" --configuration "$CONFIGURA
 APP_DIR="$PACKAGE_DIR/.build/AegisDesktop.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 
-/bin/mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources"
+/bin/mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$CONTENTS_DIR/Helpers"
 /usr/bin/ditto "$PACKAGE_DIR/App/Info.plist" "$CONTENTS_DIR/Info.plist"
 /usr/bin/ditto "$BIN_DIR/AegisDesktop" "$CONTENTS_DIR/MacOS/AegisDesktop"
+/usr/bin/ditto "$BIN_DIR/AegisWorker" "$CONTENTS_DIR/Helpers/AegisWorker"
+/usr/bin/codesign --force --sign "$SIGNING_IDENTITY" "$CONTENTS_DIR/Helpers/AegisWorker"
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --identifier com.aegis.local "$APP_DIR"
 
 SIGNING_DETAILS="$(/usr/bin/codesign -dv --verbose=4 "$APP_DIR" 2>&1)"
