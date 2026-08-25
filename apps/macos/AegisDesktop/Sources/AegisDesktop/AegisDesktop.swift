@@ -49,6 +49,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   let voiceInputEnabled = false
   let chat = ChatStore()
   let memoryStore = MemoryStore()
+  let conversationEvents = ConversationEventStore()
   let skillStore = SkillStore()
   let screenInspector = ScreenInspector()
   let visibleWindows = VisibleWindowService()
@@ -103,6 +104,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   var activeDevelopmentCandidate: DevelopmentTaskCandidate?
   var gitWorkflowContext = GitWorkflowContext()
   var conversationSessionID = "desktop"
+  var activeConversationTurnID: UUID?
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?
@@ -332,6 +334,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   func send(_ text: String) {
     let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else { return }
+    activeConversationTurnID = conversationEvents.begin(sessionId: conversationSessionID, request: message)
     chat.append(.user, message)
     if CodingAgentProviderPolicy.rejects(message) {
       speak(CodingAgentProviderPolicy.unsupportedMessage); return
@@ -359,6 +362,74 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
       switch continuation {
       case .plan(let plan): execute(plan, request: message)
       case .message(let value): speak(value)
+      }
+      return
+    }
+    if CodingResultFollowUpResolver.isDetailedLintQuestion(message) {
+      busy = true
+      Task {
+        let latest = await codingCoordinator.lastResult
+        let saved = conversationEvents.latestValidationResponse(
+          sessionId: conversationSessionID, excluding: activeConversationTurnID)
+        let project = ProjectEntityResolver.resolve(in: message, repository: memoryStore.repository)
+          ?? latest.flatMap {
+            ProjectEntityResolver.resolve(name: $0.project, repository: memoryStore.repository)
+          } ?? saved.flatMap {
+            ProjectEntityResolver.resolve(in: $0, repository: memoryStore.repository)
+          }
+        busy = false
+        guard let project else {
+          speak("어느 프로젝트의 lint 경고를 조사할지 프로젝트명을 말씀해 주세요.")
+          return
+        }
+        execute(CodingResultFollowUpResolver.detailedLintPlan(request: message,
+          project: project.name), request: message)
+      }
+      return
+    }
+    if CodingResultFollowUpResolver.isValidationFixRequest(message) {
+      busy = true
+      Task {
+        let latest = await codingCoordinator.lastResult
+        let saved = conversationEvents.latestValidationResponse(
+          sessionId: conversationSessionID, excluding: activeConversationTurnID)
+        let project = latest.flatMap {
+          ProjectEntityResolver.resolve(name: $0.project, repository: memoryStore.repository)
+        } ?? saved.flatMap {
+          ProjectEntityResolver.resolve(in: $0, repository: memoryStore.repository)
+        }
+        busy = false
+        guard let project else {
+          speak("어느 프로젝트의 검증 문제를 수정할지 프로젝트명을 말씀해 주세요.")
+          return
+        }
+        execute(CodingResultFollowUpResolver.fixPlan(request: message, project: project.name),
+          request: message)
+      }
+      return
+    }
+    if CodingResultFollowUpResolver.isValidationQuestion(message) {
+      busy = true
+      Task {
+        let result = await codingCoordinator.lastResult
+        busy = false
+        if let result {
+          speak(CodingTaskFormatter.validationExplanation(result))
+        } else if let saved = conversationEvents.latestValidationResponse(
+          sessionId: conversationSessionID, excluding: activeConversationTurnID) {
+          if let project = ProjectEntityResolver.resolve(in: saved, repository: memoryStore.repository),
+            let root = try? ProjectCommandPolicy.projectURL(project.name,
+              repository: memoryStore.repository) {
+            let report = ProjectValidationService.run(project: project.name, root: root,
+              repository: memoryStore.repository)
+            speak(CodingTaskFormatter.validationExplanation(project: project.name,
+              checks: report.checks))
+          } else {
+            speak("최근 저장 기록 기준입니다.\n\n\(saved)")
+          }
+        } else {
+          speak("최근 코드 수정 검증 결과가 없습니다.")
+        }
       }
       return
     }
@@ -500,6 +571,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   private func execute(_ plan: AgentPlan, request: String, skill: LearnedSkill? = nil) {
     do {
+      if let turn = activeConversationTurnID {
+        conversationEvents.setPlan(plan.steps.map { $0.action.rawValue }, turnId: turn)
+      }
       planExecutor = try AgentPlanExecutor(plan: plan, request: request, isLearnedSkill: skill != nil)
       activeSkill = skill
       busy = true
@@ -541,6 +615,15 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         speak(answer, role: summary.status == .succeeded ? .assistant : .error)
       }
       finishSkillExecution(executor)
+      if let turn = activeConversationTurnID {
+        let status: String = switch summary.status {
+        case .succeeded: "succeeded"
+        case .partiallySucceeded: "partiallySucceeded"
+        case .failed: "failed"
+        case .cancelled: "cancelled"
+        }
+        conversationEvents.setStatus(status, turnId: turn)
+      }
       planExecutor = nil; executingStepID = nil; busy = false
     }
   }
@@ -828,9 +911,13 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   func completeCurrentStep(succeeded: Bool, result: String? = nil) {
     guard let id = executingStepID, var executor = planExecutor else { return }
+    let action = executor.state.plan.steps.first { $0.id == id }?.action.rawValue ?? "unknown"
     let position = executor.state.index + 1
     let total = executor.state.plan.steps.count
     guard executor.complete(id, succeeded: succeeded, result: result) else { return }
+    if let turn = activeConversationTurnID {
+      conversationEvents.appendAction(.init(action: action, succeeded: succeeded, result: result), turnId: turn)
+    }
     planExecutor = executor
     chat.append(.system, "\(position)/\(total) \(succeeded ? "완료" : "실패")")
     advancePlan()
@@ -1063,6 +1150,10 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   func speak(_ text: String, role: ChatRole = .assistant) {
     reply = text
     chat.append(role, text)
+    if let turn = activeConversationTurnID {
+      conversationEvents.appendResponse(text, turnId: turn)
+      conversationEvents.setStatus(role == .error ? "failed" : "responded", turnId: turn)
+    }
   }
 
   private func resultSucceeded(_ result: String) -> Bool {

@@ -151,7 +151,8 @@ private enum CodingTaskCoordinatorWithResult {
 
 @Test func codingFindingContinuationSelectsModeAndNeverCreatesBrowserActions() {
   let finding = testFinding(project: "PTFriends")
-  let writeRequests = ["그거 고쳐줘", "방금 찾은 문제 실제로 고쳐봐"]
+  let writeRequests = ["그거 고쳐줘", "방금 찾은 문제 실제로 고쳐봐", "그 부분 수정하자",
+    "이어서 진행해", "그 작업 마저 해줘"]
   for request in writeRequests {
     guard case .write(let intent) = CodingContinuationIntentResolver.resolve(request,
       findings: [finding]) else { Issue.record("write continuation missing"); continue }
@@ -161,6 +162,50 @@ private enum CodingTaskCoordinatorWithResult {
     #expect(intent.plan.steps.contains { $0.action == .browserSearch } == false)
     #expect(ApprovalPolicy.requiresApproval(for: intent.plan.steps.last!))
   }
+}
+
+@Test func validationWarningQuestionIsHandledAsCodingResultFollowUp() {
+  #expect(CodingResultFollowUpResolver.isValidationQuestion("검증경고?"))
+  #expect(CodingResultFollowUpResolver.isValidationQuestion("검증 경고가 무슨 뜻이야?"))
+  #expect(CodingResultFollowUpResolver.isValidationQuestion(
+    "린트 에러와 빌드는 unsupported로 나오는데 뭐가 문제야?"))
+  #expect(!CodingResultFollowUpResolver.isValidationQuestion("PTFriends 상태 보여줘"))
+}
+
+@Test func validationFixFollowUpCreatesProposalAndApprovedWrite() {
+  let requests = ["build 추가하자", "린트 경고 고쳐줘", "unsupported 항목 해결해"]
+  for request in requests {
+    #expect(CodingResultFollowUpResolver.isValidationFixRequest(request))
+    let plan = CodingResultFollowUpResolver.fixPlan(request: request, project: "PTFriends")
+    #expect(plan.steps.map(\.action) == [.proposeCodingTask, .executeCodingTask])
+    #expect(plan.steps.last?.codingMode == .workspaceWrite)
+    #expect(ApprovalPolicy.requiresApproval(for: plan.steps.last!))
+  }
+}
+
+@Test func detailedLintQuestionRunsLintThenReadOnlyCodeAnalysis() {
+  let request = "PTFriends lint 경고 11개가 각각 어디서 발생하고 왜 문제인지 알려줘"
+  #expect(CodingResultFollowUpResolver.isDetailedLintQuestion(request))
+  let plan = CodingResultFollowUpResolver.detailedLintPlan(request: request, project: "PTFriends")
+  #expect(plan.steps.map(\.action) == [.runProjectLint, .analyzeProjectWithCodingAgent])
+  #expect(plan.steps.last?.dependency == .requiresPreviousSuccess)
+  #expect(plan.steps.last?.codingMode == .readOnlyAnalysis)
+  #expect(plan.steps.allSatisfy { !$0.action.requiresApproval })
+}
+
+@Test func implicitContinueRequiresOneUnambiguousProjectFinding() {
+  let pt = testFinding(project: "PTFriends")
+  let other = testFinding(project: "Aegis-MVP")
+  #expect(CodingContinuationIntentResolver.resolve("이어서 진행해", findings: []) == nil)
+  #expect(CodingContinuationIntentResolver.resolve("이어서 진행해", findings: [pt, other]) == .clarify)
+  guard case .write(let selected) = CodingContinuationIntentResolver.resolve(
+    "PTFriends 작업 이어서 진행해", findings: [pt, other],
+    explicitProject: ProjectEntity(name: "PTFriends", aliases: [])) else {
+    Issue.record("explicit project continuation missing"); return
+  }
+  #expect(selected.finding.projectName == "PTFriends")
+  #expect(selected.goal.contains("이어서 구현"))
+  #expect(ApprovalPolicy.requiresApproval(for: selected.plan.steps.last!))
 }
 
 @Test func codingProposalSucceedsThenExactExecutionPausesForApproval() throws {
@@ -424,6 +469,26 @@ private func testFinding(project: String) -> CodingFindingContext {
   let failureText = CodingTaskFormatter.format(readFailure, project: "PTFriends")
   #expect(failureText.contains("코딩 에이전트 실행에 실패"))
   #expect(!failureText.contains("읽기 전용 분석 계약을 위반"))
+}
+
+@Test func codingFailureSummaryIsNotRepeatedByThePlanFormatter() throws {
+  let plan = AgentPlan(step: AgentStep(action: .executeCodingTask,
+    content: "build 추가", project: "PTFriends", codingMode: .workspaceWrite))
+  var executor = try AgentPlanExecutor(plan: plan, request: "build 추가")
+  guard case .approval(let step, _, _) = executor.next() else {
+    Issue.record("approval missing"); return
+  }
+  let approved = executor.approve(step.id)
+  #expect(approved)
+  guard case .execute(let running, _, _) = executor.next() else {
+    Issue.record("execution missing"); return
+  }
+  let completed = executor.complete(running.id, succeeded: false, result: "기존 변경과 겹침")
+  #expect(completed)
+  guard case .finished(let summary) = executor.next() else {
+    Issue.record("summary missing"); return
+  }
+  #expect(PlanExecutionFormatter.format(summary, plan: plan, request: "build 추가") == nil)
 }
 
 @Test func coordinatorPreventsConcurrentWritesPerProject() async throws {

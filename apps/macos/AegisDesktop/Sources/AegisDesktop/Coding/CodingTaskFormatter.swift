@@ -28,10 +28,11 @@ enum CodingTaskFormatter {
     }
   }
 
-  static func format(_ result: CodingTaskResult, project: String) -> String {
+  static func format(_ result: CodingTaskResult, project: String, workStatus: Bool = false) -> String {
     if result.mode == .readOnlyAnalysis {
       if result.status == .succeeded {
-        var text = "\(project)에서 개선할 부분 1개를 찾았습니다.\n\n\(result.summary)\n\n코드는 수정하지 않았습니다."
+        let heading = workStatus ? "\(project) 현재 작업 분석" : "\(project)에서 개선할 부분 1개를 찾았습니다."
+        var text = "\(heading)\n\n\(result.summary)\n\n코드는 수정하지 않았습니다."
         if !result.preexistingFiles.isEmpty {
           text += "\n\n참고:\n분석 전부터 미커밋 변경 \(result.preexistingFiles.count)건이 존재합니다."
         }
@@ -50,7 +51,7 @@ enum CodingTaskFormatter {
       lines += ["", "자동 복구는 수행하지 않았습니다."]
       return lines.joined(separator: "\n")
     }
-    var lines = ["\(project) 코딩 작업", "", result.summary]
+    var lines = ["\(project) 코딩 작업", "", reviewSummary(result)]
     if [.succeeded, .succeededWithWarnings].contains(result.status),
       let title = result.sourceFindingTitle {
       lines.insert("방금 찾은 \(title)을(를) 수정했습니다.", at: 2)
@@ -59,12 +60,27 @@ enum CodingTaskFormatter {
       lines += ["", "변경:"] + result.changedFiles.prefix(20).map { "- \($0)" }
     }
     if !result.verification.isEmpty {
-      lines += ["", "검증:"] + result.verification.map { "- \($0.check.rawValue): \($0.status.rawValue)" }
+      lines += ["", "검증:"] + result.verification.map {
+        "- \($0.check.rawValue): \($0.status.rawValue) · \($0.summary)"
+      }
     }
     if result.hadPreexistingChanges {
       lines += ["", "주의:", "- 기존 미커밋 변경은 작업 변경으로 귀속하거나 자동 롤백하지 않습니다."]
     }
     return lines.joined(separator: "\n")
+  }
+
+  private static func reviewSummary(_ result: CodingTaskResult) -> String {
+    guard result.status == .needsReview else { return result.summary }
+    if !result.workingTreeDelta.hasChanges {
+      return "코딩 에이전트 실행 후 이번 작업에 귀속할 새 변경을 확인하지 못했습니다."
+    }
+    let overlap = Set(result.preexistingFiles).intersection(result.changedFiles).sorted()
+    if !overlap.isEmpty {
+      return "이번 작업이 기존 미커밋 변경과 같은 파일을 수정해 자동 귀속하지 않았습니다: "
+        + overlap.joined(separator: ", ")
+    }
+    return "변경 파일 수나 변경 범위가 안전 한도를 넘어 자동 완료하지 않았습니다."
   }
 
   static func diagnostics(_ status: CodingAgentStatus) -> String {
@@ -102,5 +118,33 @@ enum CodingTaskFormatter {
       "- exit status: \(diagnostics.exitStatus.map(String.init) ?? "unavailable")",
       "- duration: \(Int(result.duration))초", "- sandbox: \(diagnostics.sandboxMode)",
       "- provider events: \(diagnostics.eventCount)"].joined(separator: "\n")
+  }
+
+  static func validationExplanation(_ result: CodingTaskResult) -> String {
+    guard !result.verification.isEmpty else {
+      return "최근 \(result.project) 코딩 작업에는 실행된 검증 항목이 없습니다."
+    }
+    var lines = ["\(result.project) 최근 코드 수정 검증 결과"]
+    lines += result.verification.map {
+      "- \($0.check.rawValue): \($0.status.rawValue) · \($0.summary)"
+    }
+    let warnings = result.verification.filter { [.warning, .skipped].contains($0.status) }
+    if warnings.isEmpty {
+      lines += ["", "별도의 검증 경고는 없습니다."]
+    } else {
+      lines += ["", "경고는 코드 수정을 되돌릴 실패는 아니지만 확인이 필요한 항목입니다."]
+    }
+    return lines.joined(separator: "\n")
+  }
+
+  static func validationExplanation(project: String, checks: [ProjectValidationResult]) -> String {
+    guard !checks.isEmpty else { return "\(project)에서 확인할 검증 항목을 찾지 못했습니다." }
+    var lines = ["\(project) 검증 원인 확인"]
+    lines += checks.map { "- \($0.check.rawValue): \($0.status.rawValue) · \($0.summary)" }
+    let unsupported = checks.filter { $0.status == .unsupported }.map(\.check.rawValue)
+    if !unsupported.isEmpty {
+      lines += ["", "unsupported는 코드 오류가 아니라 package.json에 해당 스크립트가 없어서 실행하지 못했다는 뜻입니다: \(unsupported.joined(separator: ", "))"]
+    }
+    return lines.joined(separator: "\n")
   }
 }

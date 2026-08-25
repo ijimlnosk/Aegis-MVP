@@ -65,7 +65,8 @@ enum ProjectValidationRunner {
       let output = try PackageScriptTool.run(check.rawValue, at: url)
       if check == .lint, let warnings = lintWarnings(output), warnings > 0 {
         return .init(check: check, status: .warning,
-          summary: "ESLint 오류 없이 경고 \(warnings)건이 있습니다.", warningCount: warnings)
+          summary: "ESLint 오류 없이 경고 \(warnings)건이 있습니다.\n\(bounded(output))",
+          warningCount: warnings)
       }
       return .init(check: check, status: .passed, summary: "\(check.rawValue) 검사가 통과했습니다.")
     } catch ProjectCommandError.unsupportedScript {

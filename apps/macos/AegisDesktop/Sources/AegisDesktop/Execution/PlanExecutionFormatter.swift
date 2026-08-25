@@ -10,6 +10,9 @@ enum PlanExecutionFormatter {
       }
       return "요청한 작업을 실행하지 않았습니다."
     }
+    // Coding tools already surface their bounded result, changed files, and validation.
+    // Repeating the failed step result here produces a duplicate mobile error card.
+    if plan.steps.contains(where: { $0.action == .executeCodingTask }) { return nil }
     if let filename = plan.steps.last(where: { $0.shortcut == .confirm })?.content {
       let focused = summary.succeededSteps.contains { $0.action == .focusWindow }
       let reason = summary.failedSteps.first.flatMap { summary.results[$0.id] }

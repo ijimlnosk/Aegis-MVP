@@ -83,7 +83,7 @@ extension AegisAgent {
     memoryStore.recordAction(request: request, action: step.action.rawValue,
       target: project, result: result.summary, succeeded: succeeded)
     speak(result.summary, role: result.status == .failed ? .error : .assistant)
-    completeCurrentStep(succeeded: succeeded)
+    completeCurrentStep(succeeded: succeeded, result: result.summary)
   }
 
   private func deploymentReadiness(project: String) throws -> String {

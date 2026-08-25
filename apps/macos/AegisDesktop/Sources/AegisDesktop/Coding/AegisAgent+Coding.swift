@@ -112,7 +112,8 @@ extension AegisAgent {
         busy = false; codingTask = nil
         try? developmentSessions.record(project: project,
           action: "coding:\(result.status.rawValue):\(result.changedFiles.joined(separator: ","))")
-        let formatted = CodingTaskFormatter.format(result, project: project)
+        let workStatus = ProjectIntentResolver.isWorkStatusQuestion(request.lowercased())
+        let formatted = CodingTaskFormatter.format(result, project: project, workStatus: workStatus)
         if let finding = CodingFindingParser.parse(result: result) {
           codingFindings.removeAll { $0.projectId == finding.projectId }
           codingFindings.append(finding)
