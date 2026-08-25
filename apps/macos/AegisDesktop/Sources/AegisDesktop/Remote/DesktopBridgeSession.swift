@@ -1,3 +1,4 @@
+import AegisWorkerProtocol
 import Foundation
 
 @MainActor
@@ -5,6 +6,8 @@ final class DesktopBridgeSession {
   let agent = AegisAgent()
   private let sessionID: String
   private let jobs: CommandJobStore
+  private let workerJobs: WorkerLeaseStore?
+  private var approvedCommands: Set<String> = []
   private var commandResults: [String: DesktopBridgeResult] = [:]
   private var commandStartedAt: [String: Date] = [:]
   private var commandMessageIndex: [String: Int] = [:]
@@ -18,6 +21,7 @@ final class DesktopBridgeSession {
   init(sessionID: String, jobs: CommandJobStore = CommandJobStore()) {
     self.sessionID = sessionID
     self.jobs = jobs
+    workerJobs = try? WorkerLeaseStore(databaseURL: MemoryRepository.defaultDatabaseURL)
     agent.conversationSessionID = sessionID
     agent.gitWorkflowContext.sessionId = sessionID
   }
@@ -28,6 +32,7 @@ final class DesktopBridgeSession {
     commandStartedAt[id] = .now
     let index = agent.chat.messages.count
     commandMessageIndex[id] = index
+    persistWorker(id, state: .queued)
     persist(id, text, DesktopBridgeResult(status: "planning", messages: [], pendingApproval: nil,
       progress: bridgeProgress(phase: "planning", message: "요청을 이해하고 있습니다...",
         step: nil, startedAt: .now, cancellable: true)))
@@ -79,7 +84,8 @@ final class DesktopBridgeSession {
 
   func approve(commandId: String, approvalId: UUID, accepted: Bool) async -> DesktopBridgeResult {
     let index = agent.chat.messages.count
-    if accepted { agent.approveChatAction(approvalId) } else { agent.rejectChatAction(approvalId) }
+    if accepted { approvedCommands.insert(commandId); agent.approveChatAction(approvalId) }
+    else { agent.rejectChatAction(approvalId) }
     let result = await awaitResult(after: index)
     commandResults[commandId] = result
     persist(commandId, "", result)
@@ -108,6 +114,28 @@ final class DesktopBridgeSession {
   private func persist(_ commandId: String, _ request: String, _ result: DesktopBridgeResult) {
     let original = request.isEmpty ? jobs.record(commandId: commandId, sessionId: sessionID)?.request ?? "" : request
     jobs.save(commandId: commandId, sessionId: sessionID, request: original, result: result)
+    let state: WorkerJobState = switch result.status {
+    case "completed": .completed
+    case "failed": .failed
+    case "cancelled": .cancelled
+    case "awaitingApproval": .awaitingApproval
+    default: .running
+    }
+    persistWorker(commandId, state: state)
+  }
+
+  private func persistWorker(_ commandId: String, state: WorkerJobState) {
+    let steps = agent.planExecutor?.state.plan.steps ?? []
+    let mutation = steps.isEmpty || steps.contains { $0.action.requiresApproval }
+    let validates = steps.contains { step in
+      [.runProjectTypecheck, .runProjectLint, .runProjectTests, .runProjectBuild,
+       .verifyCodingTask, .executeCodingTask].contains(step.action)
+    }
+    let contract = WorkerJobContract(commandId: commandId, sessionId: sessionID,
+      state: state, risk: mutation ? .mutation : .readOnly,
+      approvalGranted: approvedCommands.contains(commandId), hasValidationPlan: validates,
+      leaseExpiresAt: nil)
+    try? workerJobs?.upsert(contract)
   }
 
   private func awaitResult(after index: Int) async -> DesktopBridgeResult {

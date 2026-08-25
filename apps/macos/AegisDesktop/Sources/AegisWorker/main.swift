@@ -7,11 +7,31 @@ struct WorkerHealth: Encodable {
   let protocolVersion = WorkerJobContract.schemaVersion
 }
 
-let arguments = CommandLine.arguments.dropFirst()
-guard arguments.count == 1, arguments.first == "--health" else {
-  FileHandle.standardError.write(Data("AegisWorker accepts only --health until queue handoff is enabled.\n".utf8))
+struct WorkerLeaseResponse: Encodable { let acquired: Bool }
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+let response: any Encodable
+switch arguments.first {
+case "--health" where arguments.count == 1:
+  response = WorkerHealth()
+case "--claim" where arguments.count == 5:
+  let store = try WorkerLeaseStore(databaseURL: URL(fileURLWithPath: arguments[1]))
+  response = WorkerLeaseResponse(acquired: try store.claim(commandId: arguments[2],
+    sessionId: arguments[3], owner: arguments[4]))
+case "--heartbeat" where arguments.count == 5:
+  let store = try WorkerLeaseStore(databaseURL: URL(fileURLWithPath: arguments[1]))
+  response = WorkerLeaseResponse(acquired: try store.heartbeat(commandId: arguments[2],
+    sessionId: arguments[3], owner: arguments[4]))
+default:
+  FileHandle.standardError.write(Data("Unsupported AegisWorker command.\n".utf8))
   exit(2)
 }
-let data = try JSONEncoder().encode(WorkerHealth())
+let data = try JSONEncoder().encode(AnyEncodable(response))
 FileHandle.standardOutput.write(data)
 FileHandle.standardOutput.write(Data("\n".utf8))
+
+private struct AnyEncodable: Encodable {
+  let value: any Encodable
+  init(_ value: any Encodable) { self.value = value }
+  func encode(to encoder: Encoder) throws { try value.encode(to: encoder) }
+}
