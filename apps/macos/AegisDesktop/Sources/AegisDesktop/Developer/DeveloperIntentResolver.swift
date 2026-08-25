@@ -13,6 +13,7 @@ enum DeveloperIntentResolver {
 
   static func plan(for request: String, repository: MemoryRepository) -> AgentPlan? {
     let text = request.lowercased()
+    guard ServerIntentParser.parse(request) == nil else { return nil }
     if ["오늘 뭐", "오늘 작업", "today's work"].contains(where: text.contains) {
       return AgentPlan(step: AgentStep(action: .getTodayDevelopmentSummary))
     }
