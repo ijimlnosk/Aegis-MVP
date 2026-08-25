@@ -152,7 +152,7 @@ private enum CodingTaskCoordinatorWithResult {
 @Test func codingFindingContinuationSelectsModeAndNeverCreatesBrowserActions() {
   let finding = testFinding(project: "PTFriends")
   let writeRequests = ["그거 고쳐줘", "방금 찾은 문제 실제로 고쳐봐", "그 부분 수정하자",
-    "이어서 진행해", "그 작업 마저 해줘"]
+    "이어서 진행해", "그 작업 마저 해줘", "수정하자", "방금 개선사항에서 나온거 개선해"]
   for request in writeRequests {
     guard case .write(let intent) = CodingContinuationIntentResolver.resolve(request,
       findings: [finding]) else { Issue.record("write continuation missing"); continue }

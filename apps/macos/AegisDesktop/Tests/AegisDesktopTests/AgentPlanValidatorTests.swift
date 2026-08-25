@@ -40,3 +40,12 @@ import Testing
   #expect(AgentPlanValidator.errors(in: malformed, for: "Mac 상태")
     .contains("step 1 cannot depend on a previous step"))
 }
+
+@Test func clipboardActionsRequireExplicitClipboardIntent() {
+  let set = AgentPlan(step: AgentStep(action: .setClipboard, content: "수정하자"))
+  let get = AgentPlan(step: AgentStep(action: .getClipboard))
+  #expect(!AgentPlanValidator.errors(in: set, for: "수정하자").isEmpty)
+  #expect(!AgentPlanValidator.errors(in: get, for: "방금 개선사항에서 나온 거 개선해").isEmpty)
+  #expect(AgentPlanValidator.errors(in: set, for: "수정하자를 클립보드에 저장해").isEmpty)
+  #expect(AgentPlanValidator.errors(in: get, for: "클립보드 보여줘").isEmpty)
+}

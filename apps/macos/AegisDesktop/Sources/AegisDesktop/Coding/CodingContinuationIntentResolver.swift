@@ -25,15 +25,17 @@ struct CodingContinuationIntent: Equatable {
 
 enum CodingContinuationIntentResolver {
   private static let references = ["방금 찾은", "그 문제", "그거", "아까 찾은", "그 개선점",
-    "그 부분", "방금 말한", "그럼 수정", "좀 더", "관련 코드"]
+    "그 부분", "방금 말한", "방금 개선", "개선사항", "나온거", "나온 거", "그럼 수정",
+    "좀 더", "관련 코드"]
   private static let writes = ["고쳐", "고치자", "수정해", "수정해줘", "수정하자", "실제로 고쳐",
-    "반영해", "반영하자"]
+    "반영해", "반영하자", "개선해", "개선하자"]
   private static let continues = ["이어서 진행", "계속 진행", "계속해", "계속 해", "마저 해",
     "마저해", "이어가", "이어 가", "작업 추가해", "작업 추가 시켜"]
 
   static func isPotentialFollowUp(_ request: String) -> Bool {
     let text = request.lowercased()
-    return references.contains(where: text.contains) || continues.contains(where: text.contains)
+    return references.contains(where: text.contains) || writes.contains(where: text.contains)
+      || continues.contains(where: text.contains)
   }
 
   static func requestsMutation(_ request: String) -> Bool {
@@ -65,6 +67,17 @@ enum CodingContinuationIntentResolver {
       return .write(.init(finding: finding, requestedMode: .workspaceWrite,
         goal: String(goal.prefix(1_000))))
     }
+    if writes.contains(where: text.contains) {
+      let candidates = explicitProject.map { project in
+        findings.filter { $0.projectId == project.name.lowercased() }
+      } ?? findings
+      guard !candidates.isEmpty else { return nil }
+      guard Set(candidates.map(\.projectId)).count == 1, let finding = candidates.last else {
+        return .clarify
+      }
+      return .write(.init(finding: finding, requestedMode: .workspaceWrite,
+        goal: String(request.prefix(1_000))))
+    }
     guard references.contains(where: text.contains) else { return nil }
     let candidates = explicitProject.map { project in
       findings.filter { $0.projectId == project.name.lowercased() }
@@ -72,10 +85,6 @@ enum CodingContinuationIntentResolver {
     guard !candidates.isEmpty else { return nil }
     guard Set(candidates.map(\.projectId)).count == 1, let finding = candidates.last else {
       return .clarify
-    }
-    if writes.contains(where: text.contains) {
-      return .write(.init(finding: finding, requestedMode: .workspaceWrite,
-        goal: String(request.prefix(1_000))))
     }
     if text.contains("설명") { return .explain(finding) }
     if text.contains("더 봐") || text.contains("관련 코드") { return .inspectMore(finding) }

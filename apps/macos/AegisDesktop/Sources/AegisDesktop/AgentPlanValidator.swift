@@ -29,7 +29,12 @@ enum AgentPlanValidator {
         + (step.application.map(CodeEditorResolver.isAllowed) == true ? [] : ["application is not an allowed code editor"])
     case .browserSearch:
       enforceRequestIntent ? browserErrors(step, request: request) : missing([("site", step.site)])
-    case .setClipboard: missing([("content", step.content)])
+    case .setClipboard:
+      missing([("content", step.content)]) + (enforceRequestIntent
+        && !hasClipboardIntent(request) ? ["clipboard intent is not present in the original request"] : [])
+    case .getClipboard:
+      enforceRequestIntent && !hasClipboardIntent(request)
+        ? ["clipboard intent is not present in the original request"] : []
     case .getDockerLogs:
       missing([("container", step.container)]) + logLineErrors(step.lines)
     case .startDockerContainer, .stopDockerContainer, .restartDockerContainer:
@@ -88,6 +93,11 @@ enum AgentPlanValidator {
       errors.append("query must be empty for site-open intent")
     } else if !open { errors.append("browser intent is not present in the original request") }
     return errors
+  }
+
+  private static func hasClipboardIntent(_ request: String) -> Bool {
+    let text = request.lowercased()
+    return ["클립보드", "clipboard", "복사", "붙여넣"].contains(where: text.contains)
   }
 
   private static func missing(_ fields: [(String, String?)]) -> [String] {
