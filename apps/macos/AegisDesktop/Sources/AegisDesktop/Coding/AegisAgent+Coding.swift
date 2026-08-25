@@ -95,7 +95,8 @@ extension AegisAgent {
           request: proposal?.currentRequest ?? step.content ?? request, mode: mode,
           untrustedEvidence: evidence,
           sourceFindingId: proposal?.sourceFindingId ?? sourceFinding?.id,
-          sourceFindingTitle: sourceFinding?.title)
+          sourceFindingTitle: sourceFinding?.title,
+          remoteSessionId: remoteSessionID, remoteCommandId: remoteCommandID)
         let selectedID = proposal?.provider ?? CodingAgentProviderResolver.resolve(
           request: step.content ?? request, project: project, repository: memoryStore.repository,
           configuration: codingProviders.configuration)

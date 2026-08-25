@@ -122,6 +122,8 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   var gitWorkflowContext = GitWorkflowContext()
   var conversationSessionID = "desktop"
   var activeConversationTurnID: UUID?
+  var remoteSessionID: String?
+  var remoteCommandID: String?
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?

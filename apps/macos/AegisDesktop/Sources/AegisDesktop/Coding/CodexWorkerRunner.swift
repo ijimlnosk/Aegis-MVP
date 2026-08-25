@@ -6,8 +6,9 @@ enum CodexWorkerRunner {
                       timeout: TimeInterval) async -> CodingAgentExecution? {
     guard task.mode == .readOnlyAnalysis, let helper = helperURL() else { return nil }
     do {
-      let directory = try jobDirectory(), requestURL = directory.appendingPathComponent("\(task.id).request.json")
-      let resultURL = directory.appendingPathComponent("\(task.id).result.json")
+      let directory = try jobDirectory(), key = artifactKey(task: task)
+      let requestURL = directory.appendingPathComponent("\(key).request.json")
+      let resultURL = directory.appendingPathComponent("\(key).result.json")
       let request = WorkerExecutionRequest(executable: executable.path,
         projectRoot: task.projectRoot.path, arguments: arguments, timeout: timeout)
       try JSONEncoder().encode(request).write(to: requestURL, options: .atomic)
@@ -34,6 +35,36 @@ enum CodexWorkerRunner {
     } catch { return nil }
   }
 
+  static func recover(sessionId: String, commandId: String) -> DesktopBridgeResult? {
+    guard let directory = try? jobDirectory() else { return nil }
+    let key = artifactKey(sessionId: sessionId, commandId: commandId)
+    let requestURL = directory.appendingPathComponent("\(key).request.json")
+    let resultURL = directory.appendingPathComponent("\(key).result.json")
+    guard let requestData = try? Data(contentsOf: requestURL),
+      let request = try? JSONDecoder().decode(WorkerExecutionRequest.self, from: requestData),
+      let resultData = try? Data(contentsOf: resultURL),
+      let result = try? JSONDecoder().decode(WorkerExecutionResult.self, from: resultData) else { return nil }
+    let parsed = CodexJSONOutputParser.parse(result.stdout,
+      projectRoot: URL(fileURLWithPath: request.projectRoot))
+    try? FileManager.default.removeItem(at: requestURL); try? FileManager.default.removeItem(at: resultURL)
+    let succeeded = result.exitStatus == 0 && !result.timedOut && !parsed.userResult.isEmpty
+    return DesktopBridgeResult(status: succeeded ? "completed" : "failed",
+      messages: [succeeded ? parsed.userResult : "worker 코드 분석을 완료하지 못했습니다."],
+      pendingApproval: nil, failureCode: succeeded ? nil : "workerAnalysisFailed")
+  }
+
+  static func hasPendingResult(sessionId: String, commandId: String, now: Date = .now) -> Bool {
+    guard let directory = try? jobDirectory() else { return false }
+    let key = artifactKey(sessionId: sessionId, commandId: commandId)
+    let requestURL = directory.appendingPathComponent("\(key).request.json")
+    let resultURL = directory.appendingPathComponent("\(key).result.json")
+    guard FileManager.default.fileExists(atPath: requestURL.path),
+      !FileManager.default.fileExists(atPath: resultURL.path),
+      let values = try? requestURL.resourceValues(forKeys: [.contentModificationDateKey]),
+      let modified = values.contentModificationDate else { return false }
+    return now.timeIntervalSince(modified) < 920
+  }
+
   private static func helperURL() -> URL? {
     let value = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/AegisWorker")
     return FileManager.default.isExecutableFile(atPath: value.path) ? value : nil
@@ -43,6 +74,16 @@ enum CodexWorkerRunner {
       .appendingPathComponent("Aegis/worker-jobs", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     return root
+  }
+  private static func artifactKey(task: CodingTask) -> String {
+    guard let session = task.remoteSessionId, let command = task.remoteCommandId else {
+      return task.id.uuidString
+    }
+    return artifactKey(sessionId: session, commandId: command)
+  }
+  private static func artifactKey(sessionId: String, commandId: String) -> String {
+    let raw = "\(sessionId)--\(commandId)"
+    return String(raw.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" }.prefix(160))
   }
   private static func cancelled() -> CodingAgentExecution {
     .init(completed: false, userResult: "작업이 취소되었습니다.",

@@ -30,6 +30,8 @@ final class DesktopBridgeSession {
     if let existing = commandResults[id] { return existing }
     if let recovered = recoveredResult(commandId: id) { return recovered }
     commandStartedAt[id] = .now
+    agent.remoteSessionID = sessionID
+    agent.remoteCommandID = id
     let index = agent.chat.messages.count
     commandMessageIndex[id] = index
     persistWorker(id, state: .queued)
@@ -104,6 +106,16 @@ final class DesktopBridgeSession {
   private func recoveredResult(commandId: String) -> DesktopBridgeResult? {
     guard let record = jobs.record(commandId: commandId, sessionId: sessionID) else { return nil }
     if ["completed", "failed", "cancelled"].contains(record.result.status) { return record.result }
+    if let recovered = CodexWorkerRunner.recover(sessionId: sessionID, commandId: commandId) {
+      jobs.save(commandId: commandId, sessionId: sessionID, request: record.request, result: recovered)
+      return recovered
+    }
+    if CodexWorkerRunner.hasPendingResult(sessionId: sessionID, commandId: commandId) {
+      return DesktopBridgeResult(status: "running", messages: [], pendingApproval: nil,
+        progress: DesktopBridgeProgress(phase: "analyzing",
+          message: "worker에서 코드 분석을 계속하고 있습니다.", currentStep: nil,
+          totalSteps: nil, cancellable: false, startedAt: ISO8601DateFormatter().string(from: .now)))
+    }
     let interrupted = DesktopBridgeResult(status: "failed",
       messages: ["AegisDesktop이 재시작되어 이전 작업이 중단되었습니다. 같은 요청을 다시 실행해 주세요."],
       pendingApproval: nil, failureCode: "desktopRestarted")
