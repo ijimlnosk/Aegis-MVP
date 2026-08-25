@@ -5,6 +5,13 @@ import Testing
   #expect(ServerIntentParser.parse("sol-server 상태 확인해")?.action == .getServerStatus)
 }
 
+@Test func serverStatusIsNotInterceptedAsAnUnregisteredProject() throws {
+  let project = try DeveloperTestSupport.gitProject()
+  let (memory, _) = try DeveloperTestSupport.repositories(project: project)
+  #expect(DeveloperIntentResolver.plan(for: "sol-server 상태 보여줘", repository: memory) == nil)
+  #expect(ServerIntentParser.parse("sol-server 상태 보여줘")?.action == .getServerStatus)
+}
+
 @Test func parsesDockerListAcceptancePhrase() {
   #expect(ServerIntentParser.parse("서버 Docker 보여줘")?.action == .getDockerContainers)
 }
