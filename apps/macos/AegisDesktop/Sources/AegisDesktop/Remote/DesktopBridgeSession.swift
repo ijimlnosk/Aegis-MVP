@@ -3,23 +3,32 @@ import Foundation
 @MainActor
 final class DesktopBridgeSession {
   let agent = AegisAgent()
+  private let sessionID: String
+  private let jobs: CommandJobStore
   private var commandResults: [String: DesktopBridgeResult] = [:]
   private var commandStartedAt: [String: Date] = [:]
   private var commandMessageIndex: [String: Int] = [:]
 
-  init(sessionID: String) {
+  init(sessionID: String, jobs: CommandJobStore = CommandJobStore()) {
+    self.sessionID = sessionID
+    self.jobs = jobs
     agent.conversationSessionID = sessionID
     agent.gitWorkflowContext.sessionId = sessionID
   }
 
   func send(id: String, text: String) async -> DesktopBridgeResult {
     if let existing = commandResults[id] { return existing }
+    if let recovered = recoveredResult(commandId: id) { return recovered }
     commandStartedAt[id] = .now
     let index = agent.chat.messages.count
     commandMessageIndex[id] = index
+    persist(id, text, DesktopBridgeResult(status: "planning", messages: [], pendingApproval: nil,
+      progress: bridgeProgress(phase: "planning", message: "요청을 이해하고 있습니다...",
+        step: nil, startedAt: .now, cancellable: true)))
     agent.send(text)
     let result = await awaitResult(after: index)
     commandResults[id] = result
+    persist(id, text, result)
     return result
   }
 
@@ -33,11 +42,16 @@ final class DesktopBridgeSession {
     if let result = commandResults[commandId], ["completed", "failed", "cancelled"].contains(result.status) {
       return result
     }
+    if commandStartedAt[commandId] == nil, let recovered = recoveredResult(commandId: commandId) {
+      return recovered
+    }
     let startedAt = commandStartedAt[commandId] ?? .now
     if agent.pendingMacAction != nil {
-      return DesktopBridgeResult(status: "awaitingApproval", messages: [], pendingApproval: pendingApprovalCard(),
+      let result = DesktopBridgeResult(status: "awaitingApproval", messages: [], pendingApproval: pendingApprovalCard(),
         progress: bridgeProgress(phase: "awaitingApproval", message: "승인을 기다리고 있습니다.",
           step: currentStep(), startedAt: startedAt, cancellable: false))
+      persist(commandId, "", result)
+      return result
     }
     if !agent.busy, agent.planExecutor == nil, let index = commandMessageIndex[commandId] {
       let messages = visibleMessages(after: index)
@@ -46,12 +60,15 @@ final class DesktopBridgeSession {
         messages: messages, pendingApproval: nil,
         failureCode: failed ? DesktopFailureClassifier.code(for: messages) : nil)
       commandResults[commandId] = result
+      persist(commandId, "", result)
       return result
     }
     let step = currentStep(), detail = phase(for: step?.action)
-    return DesktopBridgeResult(status: agent.busy ? "running" : "planning", messages: [], pendingApproval: nil,
+    let result = DesktopBridgeResult(status: agent.busy ? "running" : "planning", messages: [], pendingApproval: nil,
       progress: bridgeProgress(phase: detail.0, message: detail.1, step: step,
         startedAt: startedAt, cancellable: true))
+    persist(commandId, "", result)
+    return result
   }
 
   func approve(commandId: String, approvalId: UUID, accepted: Bool) async -> DesktopBridgeResult {
@@ -59,6 +76,7 @@ final class DesktopBridgeSession {
     if accepted { agent.approveChatAction(approvalId) } else { agent.rejectChatAction(approvalId) }
     let result = await awaitResult(after: index)
     commandResults[commandId] = result
+    persist(commandId, "", result)
     return result
   }
 
@@ -67,7 +85,23 @@ final class DesktopBridgeSession {
     let result = DesktopBridgeResult(status: "cancelled", messages: ["작업을 취소했습니다."], pendingApproval: nil,
       failureCode: "commandCancelled")
     commandResults[commandId] = result
+    persist(commandId, "", result)
     return result
+  }
+
+  private func recoveredResult(commandId: String) -> DesktopBridgeResult? {
+    guard let record = jobs.record(commandId: commandId, sessionId: sessionID) else { return nil }
+    if ["completed", "failed", "cancelled"].contains(record.result.status) { return record.result }
+    let interrupted = DesktopBridgeResult(status: "failed",
+      messages: ["AegisDesktop이 재시작되어 이전 작업이 중단되었습니다. 같은 요청을 다시 실행해 주세요."],
+      pendingApproval: nil, failureCode: "desktopRestarted")
+    jobs.save(commandId: commandId, sessionId: sessionID, request: record.request, result: interrupted)
+    return interrupted
+  }
+
+  private func persist(_ commandId: String, _ request: String, _ result: DesktopBridgeResult) {
+    let original = request.isEmpty ? jobs.record(commandId: commandId, sessionId: sessionID)?.request ?? "" : request
+    jobs.save(commandId: commandId, sessionId: sessionID, request: original, result: result)
   }
 
   private func awaitResult(after index: Int) async -> DesktopBridgeResult {

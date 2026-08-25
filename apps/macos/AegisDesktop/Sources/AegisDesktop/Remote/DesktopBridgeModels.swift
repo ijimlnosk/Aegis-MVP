@@ -3,7 +3,7 @@ import Foundation
 struct DesktopBridgeCommand: Decodable { let sessionId: String; let commandId: String; let text: String }
 struct DesktopBridgeApproval: Decodable { let sessionId: String; let commandId: String }
 
-struct DesktopBridgeResult: Encodable {
+struct DesktopBridgeResult: Codable {
   let status: String
   let messages: [String]
   let pendingApproval: DesktopBridgeApprovalCard?
@@ -19,7 +19,7 @@ struct DesktopBridgeResult: Encodable {
   }
 }
 
-struct DesktopBridgeProgress: Encodable {
+struct DesktopBridgeProgress: Codable {
   let phase: String
   let message: String
   let currentStep: Int?
@@ -28,7 +28,7 @@ struct DesktopBridgeProgress: Encodable {
   let startedAt: String
 }
 
-struct DesktopBridgeApprovalCard: Encodable {
+struct DesktopBridgeApprovalCard: Codable {
   let id: String
   let title: String
   let goal: String
