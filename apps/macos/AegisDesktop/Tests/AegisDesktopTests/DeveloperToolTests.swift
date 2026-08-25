@@ -12,6 +12,18 @@ import Testing
   #expect(try ProjectInspector.recentCommits(at: url, count: 100).split(separator: "\n").count <= 10)
 }
 
+@Test func rememberedProjectStatusSummarizesCurrentWork() throws {
+  let url = try DeveloperTestSupport.gitProject()
+  defer { try? FileManager.default.removeItem(at: url) }
+  try "change\n".write(to: url.appending(path: "README.md"), atomically: true, encoding: .utf8)
+  let repository = try DeveloperTestSupport.repositories(project: url).0
+  let result = try MemoryProjectTool.status(project: "PTFriends", repository: repository)
+  #expect(result.contains("PTFriends 작업 현황"))
+  #expect(result.contains("브랜치: main"))
+  #expect(result.contains("README.md"))
+  #expect(result.contains("최근 커밋:"))
+}
+
 @Test func packageManagerDetectionAndScriptValidation() throws {
   let url = try DeveloperTestSupport.directory()
   try Data().write(to: url.appending(path: "pnpm-lock.yaml"))

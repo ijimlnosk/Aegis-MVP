@@ -439,6 +439,46 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     recordActivity("AI 백엔드 행동 계획 생성")
     Task {
       do {
+        if DeveloperSemanticResolver.shouldClassify(message, repository: memoryStore.repository),
+          let project = ProjectEntityResolver.resolve(in: message, repository: memoryStore.repository) {
+          let decision: DeveloperSemanticDecision
+          do {
+            decision = try await DeveloperSemanticResolver.classify(message, project: project)
+          } catch {
+            busy = false
+            speak("개발 요청을 분류하지 못했습니다. 코드 조사인지 실제 수정인지 다시 말씀해 주세요.",
+              role: .error)
+            return
+          }
+          busy = false
+          switch DeveloperSemanticResolver.resolve(decision, request: message, project: project,
+            repository: memoryStore.repository) {
+          case .plan(let plan): execute(plan, request: message)
+          case .message(let value): speak(value)
+          }
+          return
+        }
+        if GitWorkflowSemanticResolver.shouldClassify(message, context: gitWorkflowContext) {
+          let decision: GitFollowUpDecision
+          do {
+            decision = try await GitWorkflowSemanticResolver.classify(message,
+              context: gitWorkflowContext)
+          } catch {
+            busy = false
+            speak("커밋 후속 요청을 분류하지 못했습니다. 계획을 다시 만들지, 실행할지 말씀해 주세요.",
+              role: .error)
+            return
+          }
+          if let continuation = GitWorkflowSemanticResolver.resolve(decision, request: message,
+            repository: memoryStore.repository, context: &gitWorkflowContext) {
+            busy = false
+            switch continuation {
+            case .plan(let plan): execute(plan, request: message)
+            case .message(let value): speak(value)
+            }
+            return
+          }
+        }
         if let developerPlan = DeveloperIntentResolver.plan(for: message,
           repository: memoryStore.repository) {
           busy = false; execute(developerPlan, request: message); return

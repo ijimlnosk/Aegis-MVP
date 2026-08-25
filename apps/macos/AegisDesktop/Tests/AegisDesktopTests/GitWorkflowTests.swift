@@ -213,6 +213,22 @@ private func gitSnapshot(_ paths: [String], branch: String = "dev",
   }
 }
 
+@Test func stalePlanRebuildPhraseCreatesANewPlanWithoutUsingTheGeneralPlanner() throws {
+  let root = try DeveloperTestSupport.gitProject(); defer { try? FileManager.default.removeItem(at: root) }
+  let repository = try DeveloperTestSupport.repositories(project: root).0
+  let snapshot = gitSnapshot(["src/a.ts"], branch: "main")
+  let plan = GitCommitPlan(projectId: "PTFriends", branch: "main", baseSnapshot: snapshot,
+    groups: [GitCommitGroup(title: "one", rationale: "one", files: ["src/a.ts"],
+      proposedMessage: "fix: first", confidence: 1)], unassignedFiles: [], warnings: [])
+  var context = GitWorkflowContext(sessionId: "S1"); context.retain(plan)
+  context.state = .invalidated
+  guard case .plan(let rebuilt) = GitWorkflowContinuationResolver.resolve("어 새로 만들어",
+    repository: repository, context: &context) else { Issue.record("replan missing"); return }
+  #expect(rebuilt.steps.map(\.action) == [.proposeCommitPlan])
+  #expect(rebuilt.steps.first?.project == "PTFriends")
+  #expect(rebuilt.steps.first?.content?.contains("새 계획") == true)
+}
+
 @Test func sessionsCannotAccessAnotherSessionsPlanAndCommandIdentityIsIrrelevant() throws {
   let root = try DeveloperTestSupport.gitProject(); defer { try? FileManager.default.removeItem(at: root) }
   let repository = try DeveloperTestSupport.repositories(project: root).0

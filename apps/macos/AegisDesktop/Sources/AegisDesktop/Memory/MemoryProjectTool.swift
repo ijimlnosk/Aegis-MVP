@@ -2,26 +2,16 @@ import Foundation
 
 enum MemoryProjectTool {
   static func status(project: String, repository: MemoryRepository) throws -> String {
-    guard let memory = try repository.find(type: .project, key: project) else {
-      throw MemoryProjectError.unknownProject(project)
-    }
-    let path = URL(fileURLWithPath: memory.value).standardizedFileURL
-    guard memory.value.hasPrefix("/"), FileManager.default.fileExists(atPath: path.path) else {
-      throw MemoryProjectError.invalidPath(memory.value)
-    }
-    let process = Process()
-    let output = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["status", "--short", "--branch"]
-    process.currentDirectoryURL = path
-    process.standardOutput = output
-    process.standardError = output
-    try process.run()
-    process.waitUntilExit()
-    let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard process.terminationStatus == 0 else { throw MemoryProjectError.git(text) }
-    return text.isEmpty ? "변경 사항 없음" : text
+    let path = try ProjectCommandPolicy.projectURL(project, repository: repository)
+    let snapshot = try ProjectInspector.snapshot(at: path)
+    let changes = snapshot.changedFiles.isEmpty
+      ? ["- 변경사항 없음"]
+      : snapshot.changedFiles.map { "- \($0)" }
+    let commits = (try? ProjectInspector.recentCommits(at: path, count: 3)) ?? ""
+    var lines = ["\(project) 작업 현황", "브랜치: \(snapshot.branch.isEmpty ? "분리된 HEAD" : snapshot.branch)", "", "변경 파일:"]
+    lines += changes
+    if !commits.isEmpty { lines += ["", "최근 커밋:", commits] }
+    return lines.joined(separator: "\n")
   }
 }
 

@@ -22,6 +22,15 @@ import Testing
   #expect(plan?.steps.first?.project == "PTFriends")
 }
 
+@Test func projectWorkQuestionReadsStatusWithoutOpeningEditor() throws {
+  let repository = try entityRepository()
+  try repository.save(MemoryRecord(type: .project, key: "PTFriends", value: "/tmp/ptfriends"))
+  let plan = ProjectIntentResolver.plan(for: "PTFriends 무슨 작업 중인지 알려줘", repository: repository)
+  #expect(plan?.steps.map(\.action) == [.analyzeProjectWithCodingAgent])
+  #expect(plan?.steps.first?.codingMode == .readOnlyAnalysis)
+  #expect(plan?.steps.first?.content?.contains("Git diff") == true)
+}
+
 @Test func registeredProjectCannotBeImplicitContainer() {
   let project = ProjectEntity(name: "PTFriends", aliases: ["피티친구"])
   let inventory = [DockerContext(name: "PTFriends", state: "Exited", isRunning: false)]

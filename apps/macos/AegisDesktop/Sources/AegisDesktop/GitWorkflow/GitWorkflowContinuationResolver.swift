@@ -28,6 +28,10 @@ enum GitWorkflowContinuationResolver {
     guard ProjectEntityResolver.resolve(name: plan.projectId, repository: repository) != nil else {
       return .message("\(plan.projectId) 프로젝트 상태를 확인할 수 없습니다.")
     }
+    if wantsReplan(text) {
+      return .plan(AgentPlan(step: AgentStep(action: .proposeCommitPlan,
+        content: "새 계획: \(request)", project: plan.projectId)))
+    }
     let adjust = hasSelectionOrExclusion(text)
     let execute = wantsExecution(text)
     if adjust && !execute {
@@ -47,8 +51,12 @@ enum GitWorkflowContinuationResolver {
   private static func isContinuation(_ text: String) -> Bool {
     if text == "해" || text == "진행해" { return true }
     return ["진행해", "커밋진행", "좋아해", "그대로해", "전부진행", "커밋해",
-     "1번", "2번", "3번", "첫번째", "두번째", "세번째", "제외", "빼"]
+     "1번", "2번", "3번", "첫번째", "두번째", "세번째", "제외", "빼",
+     "새로만들", "다시만들", "새계획", "다시계획"]
       .contains(where: text.contains)
+  }
+  private static func wantsReplan(_ text: String) -> Bool {
+    ["새로만들", "다시만들", "새계획", "다시계획"].contains(where: text.contains)
   }
   private static func wantsExecution(_ text: String) -> Bool {
     ["진행", "해", "커밋"].contains(where: text.contains) && !text.contains("빼줘")

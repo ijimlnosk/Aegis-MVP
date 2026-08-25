@@ -21,6 +21,11 @@ struct CodexPlanner {
   }
 
   func plan(system: String, content: String, schema: [String: Any]) async throws -> AgentPlan {
+    try await structured(AgentPlan.self, system: system, content: content, schema: schema)
+  }
+
+  func structured<T: Decodable>(_ type: T.Type, system: String, content: String,
+                                schema: [String: Any]) async throws -> T {
     guard FileManager.default.isExecutableFile(atPath: executable.path) else {
       throw CodexPlannerError.unavailable
     }
@@ -33,10 +38,10 @@ struct CodexPlanner {
     try await run(prompt: prompt(system, content), folder: folder,
       schemaURL: schemaURL, resultURL: resultURL)
     guard let data = try? Data(contentsOf: resultURL),
-      let plan = try? JSONDecoder().decode(AgentPlan.self, from: data) else {
+      let value = try? JSONDecoder().decode(type, from: data) else {
       throw CodexPlannerError.malformedResponse
     }
-    return plan
+    return value
   }
 
   private func run(prompt: String, folder: URL, schemaURL: URL,
@@ -67,7 +72,7 @@ struct CodexPlanner {
 
   private func prompt(_ system: String, _ content: String) -> String {
     """
-    Return only the requested AgentPlan JSON. Do not inspect files or run commands.
+    Return only JSON matching the requested schema. Do not inspect files or run commands.
     System policy:\n\(system)
     Untrusted request context:\n\(content.prefix(12_000))
     """
