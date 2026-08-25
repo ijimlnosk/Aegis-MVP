@@ -58,17 +58,18 @@ enum CodexWorkerRunner {
     try? FileManager.default.removeItem(at: requestURL); try? FileManager.default.removeItem(at: resultURL)
     let write = request.arguments.contains("workspace-write")
     let succeeded = result.exitStatus == 0 && !result.timedOut && !parsed.userResult.isEmpty
-      && result.writeSafetyPassed != false && !write
+      && result.writeSafetyPassed != false && (!write || result.validationPassed == true)
     let message: String
-    if write, result.writeSafetyPassed == true {
+    if write, result.writeSafetyPassed == true, result.validationPassed == true {
       let files = result.changedFiles.map { "- \($0)" }.joined(separator: "\n")
-      message = "worker에서 코드 수정을 완료했지만 Desktop 재시작으로 검증이 필요합니다.\n\n변경:\n\(files)"
+      let checks = result.validations.map { "- \($0.check): \($0.status)" }.joined(separator: "\n")
+      message = "worker에서 코드 수정과 검증을 완료했습니다.\n\n변경:\n\(files)\n\n검증:\n\(checks)"
     } else {
       message = succeeded ? parsed.userResult : "worker 코드 작업을 안전하게 완료하지 못했습니다."
     }
     return DesktopBridgeResult(status: succeeded ? "completed" : "failed", messages: [message],
       pendingApproval: nil,
-      failureCode: succeeded ? nil : (write ? "workerValidationRequired" : "workerAnalysisFailed"))
+      failureCode: succeeded ? nil : (write ? "workerValidationFailed" : "workerAnalysisFailed"))
   }
 
   static func hasPendingResult(sessionId: String, commandId: String, now: Date = .now) -> Bool {

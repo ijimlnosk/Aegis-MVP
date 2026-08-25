@@ -48,13 +48,28 @@ public struct WorkerExecutionResult: Codable, Sendable {
   public let changedFiles: [String]
   public let overlappingFiles: [String]
   public let writeSafetyPassed: Bool?
+  public let validations: [WorkerValidationResult]
+  public let validationPassed: Bool?
 
   public init(exitStatus: Int32, stdout: Data, hadStderr: Bool, timedOut: Bool,
               changedFiles: [String] = [], overlappingFiles: [String] = [],
-              writeSafetyPassed: Bool? = nil) {
+              writeSafetyPassed: Bool? = nil, validations: [WorkerValidationResult] = [],
+              validationPassed: Bool? = nil) {
     self.exitStatus = exitStatus; self.stdout = stdout
     self.hadStderr = hadStderr; self.timedOut = timedOut
     self.changedFiles = changedFiles; self.overlappingFiles = overlappingFiles
     self.writeSafetyPassed = writeSafetyPassed
+    self.validations = validations; self.validationPassed = validationPassed
+  }
+}
+
+public struct WorkerValidationResult: Codable, Sendable, Equatable {
+  public let check: String
+  public let status: String
+  public let exitCode: Int32?
+  public let summary: String
+
+  public init(check: String, status: String, exitCode: Int32?, summary: String) {
+    self.check = check; self.status = status; self.exitCode = exitCode; self.summary = summary
   }
 }

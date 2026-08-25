@@ -23,12 +23,17 @@ enum WorkerWriteExecutor {
     let changed = WorkerWriteGuard.changedFiles(from: before, to: after)
     let existing = Set(before.changes.map(\.path))
     let overlaps = changed.filter(existing.contains)
-    let safe = execution.exitStatus == 0 && !execution.timedOut
+    let scopeSafe = execution.exitStatus == 0 && !execution.timedOut && !changed.isEmpty
       && changed.count <= authorization.maximumChangedFiles && overlaps.isEmpty
       && before.head == after.head && before.branch == after.branch
+    let validations = scopeSafe
+      ? WorkerPackageValidator.run(checks: authorization.requiredValidations, root: root) : []
+    let validationPassed = scopeSafe && !validations.contains { $0.status == "failed" }
+    let safe = scopeSafe && validationPassed
     let result = WorkerExecutionResult(exitStatus: execution.exitStatus, stdout: execution.stdout,
       hadStderr: execution.hadStderr, timedOut: execution.timedOut,
-      changedFiles: changed, overlappingFiles: overlaps, writeSafetyPassed: safe)
+      changedFiles: changed, overlappingFiles: overlaps, writeSafetyPassed: safe,
+      validations: validations, validationPassed: validationPassed)
     try JSONEncoder().encode(result).write(to: resultURL, options: .atomic)
   }
 
