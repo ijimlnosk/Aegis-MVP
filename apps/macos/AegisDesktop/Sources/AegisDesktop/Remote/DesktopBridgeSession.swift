@@ -7,6 +7,7 @@ final class DesktopBridgeSession {
   private let sessionID: String
   private let jobs: CommandJobStore
   private let workerJobs: WorkerLeaseStore?
+  private let workerAuthorizations: WorkerAuthorizationStore?
   private var approvedCommands: Set<String> = []
   private var commandResults: [String: DesktopBridgeResult] = [:]
   private var commandStartedAt: [String: Date] = [:]
@@ -22,6 +23,7 @@ final class DesktopBridgeSession {
     self.sessionID = sessionID
     self.jobs = jobs
     workerJobs = try? WorkerLeaseStore(databaseURL: MemoryRepository.defaultDatabaseURL)
+    workerAuthorizations = try? WorkerAuthorizationStore(databaseURL: MemoryRepository.defaultDatabaseURL)
     agent.conversationSessionID = sessionID
     agent.gitWorkflowContext.sessionId = sessionID
   }
@@ -86,7 +88,10 @@ final class DesktopBridgeSession {
 
   func approve(commandId: String, approvalId: UUID, accepted: Bool) async -> DesktopBridgeResult {
     let index = agent.chat.messages.count
-    if accepted { approvedCommands.insert(commandId); agent.approveChatAction(approvalId) }
+    if accepted {
+      persistWriteAuthorization(commandId: commandId, approvalId: approvalId)
+      approvedCommands.insert(commandId); agent.approveChatAction(approvalId)
+    }
     else { agent.rejectChatAction(approvalId) }
     let result = await awaitResult(after: index)
     commandResults[commandId] = result
@@ -148,6 +153,23 @@ final class DesktopBridgeSession {
       approvalGranted: approvedCommands.contains(commandId), hasValidationPlan: validates,
       leaseExpiresAt: nil)
     try? workerJobs?.upsert(contract)
+  }
+
+  private func persistWriteAuthorization(commandId: String, approvalId: UUID) {
+    guard agent.pendingMacAction?.kind == AgentAction.executeCodingTask.rawValue,
+      let project = agent.pendingMacAction?.arguments["project"],
+      let root = try? ProjectCommandPolicy.projectURL(project, repository: agent.memoryStore.repository),
+      let snapshot = try? CodingGitInspector.snapshot(at: root),
+      let request = jobs.record(commandId: commandId, sessionId: sessionID)?.request else { return }
+    let changes = snapshot.entries.map {
+      WorkerBaselineEntry(path: $0.path, fingerprint: $0.contentFingerprint)
+    }
+    let authorization = WorkerWriteAuthorization(commandId: commandId, sessionId: sessionID,
+      approvalId: approvalId, request: request, projectRoot: root.path,
+      baselineHead: snapshot.head, baselineBranch: snapshot.branch, baselineChanges: changes,
+      maximumChangedFiles: CodingConfiguration.load().maximumChangedFiles,
+      requiredValidations: ["typecheck", "lint", "test", "build"])
+    try? workerAuthorizations?.issue(authorization)
   }
 
   private func awaitResult(after index: Int) async -> DesktopBridgeResult {
