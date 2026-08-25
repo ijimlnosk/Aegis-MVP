@@ -23,16 +23,19 @@ struct CodingTask: Identifiable, Codable, Sendable, Equatable {
   let sourceFindingTitle: String?
   let remoteSessionId: String?
   let remoteCommandId: String?
+  let remoteApprovalRequest: String?
 
   init(id: UUID = UUID(), project: String, projectRoot: URL, request: String,
        mode: CodingTaskMode, startedAt: Date = Date(), untrustedEvidence: [String] = [],
        sourceFindingId: UUID? = nil, sourceFindingTitle: String? = nil,
-       remoteSessionId: String? = nil, remoteCommandId: String? = nil) {
+       remoteSessionId: String? = nil, remoteCommandId: String? = nil,
+       remoteApprovalRequest: String? = nil) {
     self.id = id; self.project = project; self.projectRoot = projectRoot
     self.request = request; self.mode = mode; self.startedAt = startedAt
     self.untrustedEvidence = untrustedEvidence
     self.sourceFindingId = sourceFindingId; self.sourceFindingTitle = sourceFindingTitle
     self.remoteSessionId = remoteSessionId; self.remoteCommandId = remoteCommandId
+    self.remoteApprovalRequest = remoteApprovalRequest
   }
 }
 

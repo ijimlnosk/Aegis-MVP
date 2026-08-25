@@ -77,4 +77,11 @@ public enum WorkerWriteGuard {
       && (1...100).contains(authorization.maximumChangedFiles)
       && !authorization.requiredValidations.isEmpty
   }
+
+  public static func changedFiles(from baseline: WorkerGitBaseline,
+                                  to current: WorkerGitBaseline) -> [String] {
+    let before = Dictionary(uniqueKeysWithValues: baseline.changes.map { ($0.path, $0.fingerprint) })
+    let after = Dictionary(uniqueKeysWithValues: current.changes.map { ($0.path, $0.fingerprint) })
+    return Set(before.keys).union(after.keys).filter { before[$0] != after[$0] }.sorted()
+  }
 }

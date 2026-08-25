@@ -4,17 +4,25 @@ import Foundation
 enum CodexWorkerRunner {
   static func execute(task: CodingTask, executable: URL, arguments: [String],
                       timeout: TimeInterval) async -> CodingAgentExecution? {
-    guard task.mode == .readOnlyAnalysis, let helper = helperURL() else { return nil }
+    guard let helper = helperURL() else { return nil }
+    if task.mode == .workspaceWrite,
+      [task.remoteSessionId, task.remoteCommandId, task.remoteApprovalRequest].contains(where: { $0 == nil }) {
+      return nil
+    }
     do {
       let directory = try jobDirectory(), key = artifactKey(task: task)
       let requestURL = directory.appendingPathComponent("\(key).request.json")
       let resultURL = directory.appendingPathComponent("\(key).result.json")
       let request = WorkerExecutionRequest(executable: executable.path,
-        projectRoot: task.projectRoot.path, arguments: arguments, timeout: timeout)
+        projectRoot: task.projectRoot.path, arguments: arguments, timeout: timeout,
+        databasePath: task.mode == .workspaceWrite ? MemoryRepository.defaultDatabaseURL.path : nil,
+        commandId: task.remoteCommandId, sessionId: task.remoteSessionId,
+        authorizationRequest: task.remoteApprovalRequest)
       try JSONEncoder().encode(request).write(to: requestURL, options: .atomic)
       let process = Process()
       process.executableURL = helper
-      process.arguments = ["--execute-read-only", requestURL.path, resultURL.path]
+      process.arguments = [task.mode == .readOnlyAnalysis ? "--execute-read-only" : "--execute-write",
+        requestURL.path, resultURL.path]
       process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
       try process.run()
       let deadline = Date().addingTimeInterval(timeout + 10)
@@ -26,7 +34,8 @@ enum CodexWorkerRunner {
         let result = try? JSONDecoder().decode(WorkerExecutionResult.self, from: data) else { return nil }
       try? FileManager.default.removeItem(at: requestURL); try? FileManager.default.removeItem(at: resultURL)
       let parsed = CodexJSONOutputParser.parse(result.stdout, projectRoot: task.projectRoot)
-      return .init(completed: result.exitStatus == 0 && !result.timedOut,
+      let safe = task.mode == .readOnlyAnalysis || result.writeSafetyPassed == true
+      return .init(completed: result.exitStatus == 0 && !result.timedOut && safe,
         userResult: parsed.userResult,
         diagnostics: .init(exitStatus: result.exitStatus, sandboxMode: "read-only",
           stderrSummary: result.hadStderr ? "provider stderr available" : nil,
@@ -47,10 +56,19 @@ enum CodexWorkerRunner {
     let parsed = CodexJSONOutputParser.parse(result.stdout,
       projectRoot: URL(fileURLWithPath: request.projectRoot))
     try? FileManager.default.removeItem(at: requestURL); try? FileManager.default.removeItem(at: resultURL)
+    let write = request.arguments.contains("workspace-write")
     let succeeded = result.exitStatus == 0 && !result.timedOut && !parsed.userResult.isEmpty
-    return DesktopBridgeResult(status: succeeded ? "completed" : "failed",
-      messages: [succeeded ? parsed.userResult : "worker 코드 분석을 완료하지 못했습니다."],
-      pendingApproval: nil, failureCode: succeeded ? nil : "workerAnalysisFailed")
+      && result.writeSafetyPassed != false && !write
+    let message: String
+    if write, result.writeSafetyPassed == true {
+      let files = result.changedFiles.map { "- \($0)" }.joined(separator: "\n")
+      message = "worker에서 코드 수정을 완료했지만 Desktop 재시작으로 검증이 필요합니다.\n\n변경:\n\(files)"
+    } else {
+      message = succeeded ? parsed.userResult : "worker 코드 작업을 안전하게 완료하지 못했습니다."
+    }
+    return DesktopBridgeResult(status: succeeded ? "completed" : "failed", messages: [message],
+      pendingApproval: nil,
+      failureCode: succeeded ? nil : (write ? "workerValidationRequired" : "workerAnalysisFailed"))
   }
 
   static func hasPendingResult(sessionId: String, commandId: String, now: Date = .now) -> Bool {

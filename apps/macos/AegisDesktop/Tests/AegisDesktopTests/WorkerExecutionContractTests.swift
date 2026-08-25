@@ -14,3 +14,15 @@ import Testing
   #expect(!write.isSafeReadOnlyCodex)
   #expect(!shell.isSafeReadOnlyCodex)
 }
+
+@Test func workerExecutionContractRequiresWriteAuthorizationMetadata() {
+  let root = FileManager.default.temporaryDirectory
+  let safe = WorkerExecutionRequest(executable: "/opt/homebrew/bin/codex", projectRoot: root.path,
+    arguments: ["exec", "--sandbox", "workspace-write", "fix"], timeout: 60,
+    databasePath: "/tmp/aegis.sqlite", commandId: "C1", sessionId: "S1",
+    authorizationRequest: "fix")
+  let missing = WorkerExecutionRequest(executable: "/opt/homebrew/bin/codex", projectRoot: root.path,
+    arguments: ["exec", "--sandbox", "workspace-write", "fix"], timeout: 60)
+  #expect(safe.isSafeWorkspaceWriteCodex)
+  #expect(!missing.isSafeWorkspaceWriteCodex)
+}

@@ -34,6 +34,7 @@ final class DesktopBridgeSession {
     commandStartedAt[id] = .now
     agent.remoteSessionID = sessionID
     agent.remoteCommandID = id
+    agent.remoteRequestText = text
     let index = agent.chat.messages.count
     commandMessageIndex[id] = index
     persistWorker(id, state: .queued)

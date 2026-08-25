@@ -124,6 +124,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   var activeConversationTurnID: UUID?
   var remoteSessionID: String?
   var remoteCommandID: String?
+  var remoteRequestText: String?
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?
