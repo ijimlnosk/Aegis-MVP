@@ -45,6 +45,36 @@ public struct WorkerWriteAuthorization: Codable, Sendable, Equatable {
   }
 
   public static func digest(_ value: String) -> String {
-    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    digest(Data(value.utf8))
+  }
+
+  public static func digest(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+public struct WorkerGitBaseline: Codable, Sendable, Equatable {
+  public let head: String
+  public let branch: String
+  public let changes: [WorkerBaselineEntry]
+
+  public init(head: String, branch: String, changes: [WorkerBaselineEntry]) {
+    self.head = head; self.branch = branch
+    self.changes = changes.sorted { $0.path < $1.path }
+  }
+}
+
+public enum WorkerWriteGuard {
+  public static func allows(_ authorization: WorkerWriteAuthorization,
+                            commandId: String, sessionId: String, request: String,
+                            projectRoot: String, current: WorkerGitBaseline,
+                            now: Date = .now) -> Bool {
+    authorization.authorizes(commandId: commandId, sessionId: sessionId,
+      request: request, projectRoot: projectRoot, now: now)
+      && authorization.baselineHead == current.head
+      && authorization.baselineBranch == current.branch
+      && authorization.baselineChanges == current.changes
+      && (1...100).contains(authorization.maximumChangedFiles)
+      && !authorization.requiredValidations.isEmpty
   }
 }

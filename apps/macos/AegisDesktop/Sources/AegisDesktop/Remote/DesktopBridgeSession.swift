@@ -161,8 +161,10 @@ final class DesktopBridgeSession {
       let root = try? ProjectCommandPolicy.projectURL(project, repository: agent.memoryStore.repository),
       let snapshot = try? CodingGitInspector.snapshot(at: root),
       let request = jobs.record(commandId: commandId, sessionId: sessionID)?.request else { return }
-    let changes = snapshot.entries.map {
-      WorkerBaselineEntry(path: $0.path, fingerprint: $0.contentFingerprint)
+    let changes = snapshot.entries.map { entry in
+      let data = (try? Data(contentsOf: root.appendingPathComponent(entry.path))) ?? Data("missing".utf8)
+      return WorkerBaselineEntry(path: entry.path,
+        fingerprint: WorkerWriteAuthorization.digest(data))
     }
     let authorization = WorkerWriteAuthorization(commandId: commandId, sessionId: sessionID,
       approvalId: approvalId, request: request, projectRoot: root.path,
