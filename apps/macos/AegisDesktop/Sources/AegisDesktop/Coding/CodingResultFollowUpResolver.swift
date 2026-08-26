@@ -4,11 +4,13 @@ enum CodingResultFollowUpResolver {
     let lint = text.contains("lint") || text.contains("린트")
     let detail = ["각각", "어디", "위치", "왜", "원인", "상세", "목록", "어떤"]
       .contains(where: text.contains)
-    return lint && detail
+    let freshInvestigation = ["찾아", "살펴", "조사", "하나", "남아", "있어", "새로", "다시"]
+      .contains(where: text.contains)
+    return lint && (detail || freshInvestigation)
   }
 
   static func detailedLintPlan(request: String, project: String) -> AgentPlan {
-    let instruction = "lint 원본 결과에 나온 각 경고의 파일과 줄, 규칙명, 발생 이유, 실제 위험도, 권장 수정 방향을 코드 기준으로 설명해 주세요. 코드는 수정하지 마세요. 사용자 요청: \(request)"
+    let instruction = "lint 원본 결과를 새로 조사해 사용자 요청 범위(하나 또는 전체)에 맞춰 경고의 파일과 줄, 규칙명, 발생 이유, 실제 위험도, 권장 수정 방향을 코드 기준으로 설명해 주세요. 코드는 수정하지 마세요. 사용자 요청: \(request)"
     return AgentPlan(steps: [
       AgentStep(action: .runProjectLint, project: project),
       AgentStep(action: .analyzeProjectWithCodingAgent, dependency: .requiresPreviousSuccess,

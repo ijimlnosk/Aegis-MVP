@@ -186,7 +186,9 @@ private enum CodingTaskCoordinatorWithResult {
 
 @Test func detailedLintQuestionRunsLintThenReadOnlyCodeAnalysis() {
   let request = "PTFriends lint 경고 11개가 각각 어디서 발생하고 왜 문제인지 알려줘"
-  #expect(CodingResultFollowUpResolver.isDetailedLintQuestion(request))
+  for value in [request, "PTFriends lint 경고 하나 찾아봐", "PTFriends lint 경고 있어?"] {
+    #expect(CodingResultFollowUpResolver.isDetailedLintQuestion(value))
+  }
   let plan = CodingResultFollowUpResolver.detailedLintPlan(request: request, project: "PTFriends")
   #expect(plan.steps.map(\.action) == [.runProjectLint, .analyzeProjectWithCodingAgent])
   #expect(plan.steps.last?.dependency == .requiresPreviousSuccess)

@@ -29,6 +29,9 @@ import Testing
   let lint = SemanticRouter.followUp(
     for: "PTFriends lint 경고가 각각 어디서 나와?", hasCodingFindings: false)
   #expect(lint == .init(kind: .detailedLint, risk: .readOnly, requiresApproval: false))
+  let freshLint = SemanticRouter.followUp(
+    for: "PTFriends lint 경고 하나 찾아봐", hasCodingFindings: false)
+  #expect(freshLint == .init(kind: .detailedLint, risk: .readOnly, requiresApproval: false))
 
   let fix = SemanticRouter.followUp(
     for: "수정 가능한 경고는 수정하자", hasCodingFindings: false)
