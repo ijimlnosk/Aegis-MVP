@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { slashSuggestions } from "@/entities/command/model/slashCommands";
 import { colors } from "@/shared/ui/theme";
+import { SlashCommandPalette } from "./SlashCommandPalette";
 
 const quick = ["PTFriends 상태 보여줘", "sol-server 상태 보여줘", "현재 화면 상태 알려줘", "PTFriends 어디까지 했지?"];
 export function ChatComposer({ disabled, onSend }: { disabled: boolean; onSend(value: string): void }) {
   const [text, setText] = useState(""); const submit = (value = text) => {
     const trimmed = value.trim(); if (!trimmed || disabled) return; setText(""); onSend(trimmed); };
-  return <View style={styles.wrap}><ScrollView horizontal showsHorizontalScrollIndicator={false}
+  const suggestions = disabled ? [] : slashSuggestions(text);
+  return <View style={styles.wrap}>{suggestions.length > 0
+    ? <SlashCommandPalette commands={suggestions} onChoose={submit} />
+    : <ScrollView horizontal showsHorizontalScrollIndicator={false}
     contentContainerStyle={styles.chips}>{quick.map(value => <TouchableOpacity key={value} style={styles.chip}
-      onPress={() => submit(value)} disabled={disabled}><Text style={styles.chipText}>{value.replace(" 보여줘", "")}</Text></TouchableOpacity>)}</ScrollView>
+      onPress={() => submit(value)} disabled={disabled}><Text style={styles.chipText}>{value.replace(" 보여줘", "")}</Text></TouchableOpacity>)}</ScrollView>}
     {/* TextInput stays editable=true always: toggling it off fires Android's HIDE_SOFT_INPUT_FROM_VIEW mid-command. */}
     <View style={styles.row}><TextInput style={styles.input} multiline value={text} onChangeText={setText}
-      placeholder="Aegis에게 요청..." placeholderTextColor={colors.muted} />
+      placeholder="Aegis에게 요청... (/ 로 명령어)" placeholderTextColor={colors.muted} />
       <TouchableOpacity accessibilityRole="button" style={[styles.send, disabled && styles.disabled]}
         disabled={disabled} onPress={() => submit()}><Text style={styles.sendText}>Send</Text></TouchableOpacity></View>
   </View>;

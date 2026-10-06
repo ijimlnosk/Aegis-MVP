@@ -361,6 +361,12 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     guard !message.isEmpty else { return }
     activeConversationTurnID = conversationEvents.begin(sessionId: conversationSessionID, request: message)
     chat.append(.user, message)
+    // Slash commands are excluded so /perf and /status do not skew the timing data they report.
+    if let slash = SlashCommandResolver.resolve(message,
+      projects: ProjectEntityResolver.knownProjects(repository: memoryStore.repository),
+      timings: { [timingStore] in timingStore.recent() }) {
+      runSlashCommand(slash, request: message); return
+    }
     requestTiming = RequestTimingTracker(source: remoteCommandID == nil ? "desktop" : "remote", request: message)
     if CodingAgentProviderPolicy.rejects(message) {
       speak(CodingAgentProviderPolicy.unsupportedMessage); return
@@ -1168,6 +1174,18 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
           failCurrentStep(error.localizedDescription)
         }
       }
+    }
+  }
+
+  private func runSlashCommand(_ resolution: SlashCommandResolution, request: String) {
+    switch resolution {
+    case .message(let text): speak(text)
+    case .plan(let actions):
+      // A slash command must not be mistaken for an approval reply or interleave a running plan.
+      guard pendingMacAction == nil, pendingKakaoMessage == nil, planExecutor == nil else {
+        speak("진행 중인 작업이나 승인 대기가 끝난 뒤 다시 입력해 주세요."); return
+      }
+      execute(AgentPlan(steps: actions.map { AgentStep(action: $0) }), request: request)
     }
   }
 
