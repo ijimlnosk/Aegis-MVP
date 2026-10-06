@@ -41,7 +41,7 @@ export function createRemoteGateway(config: RemoteGatewayConfig,
       if (request.method === "GET" && url.pathname === "/v1/status") {
         const desktopBridge = await coordinator.desktopBridgeStatus();
         return json(response, 200, { enabled: config.enabled, reachable: true,
-          gateway: "ready", desktopBridge, bind: classifyBindHost(config.host), port: config.port,
+          gateway: "ready", desktopBridge, screenLocked: coordinator.desktopScreenLocked(), bind: classifyBindHost(config.host), port: config.port,
           ...coordinator.status() });
       }
       if (request.method === "GET" && url.pathname === "/v1/devices") {

@@ -9,7 +9,7 @@ import { createId } from "@/shared/lib/createId";
 import { terminalCommandContent } from "@/entities/command/model/failureMessages";
 import { useRemoteSession } from "./sessionStore";
 import { pollDelay } from "./progress";
-import { connectionStateFor, SETTLED_CONNECTION } from "./connectionState";
+import { connectionStateFor } from "./connectionState";
 import { useConnectionMonitor } from "./useConnectionMonitor";
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"]);
@@ -37,6 +37,8 @@ export function useRemoteCommands() {
   const setGatewayURL = useRemoteSession(value => value.setGatewayURL);
   const setCredential = useRemoteSession(value => value.setCredential);
   const setConnection = useRemoteSession(value => value.setConnection);
+  const screenLocked = useRemoteSession(value => value.screenLocked);
+  const setScreenLocked = useRemoteSession(value => value.setScreenLocked);
   const addMessage = useRemoteSession(value => value.addMessage);
   const setActive = useRemoteSession(value => value.setActive);
   const setLastCommand = useRemoteSession(value => value.setLastCommand);
@@ -67,6 +69,7 @@ export function useRemoteCommands() {
     }
     return false;
   }, [setCredential, setConnection]);
+  const restartStatusCheck = useConnectionMonitor(client, disconnectInvalid, setConnection, setScreenLocked);
 
   const poll = useCallback(async (id: string) => {
     if (!client || polling.current) return; polling.current = true;
@@ -78,7 +81,8 @@ export function useRemoteCommands() {
         addMessage({ id: createId(), role: command.status === "completed" ? "assistant" : "error",
           content: terminalCommandContent(command), createdAt: new Date().toISOString(), commandId: id, status: command.status });
         setLastCommand({ status: command.status, failureCode: command.failureCode });
-        setActive(); await commandRecoveryStore.clear(); attempts.current = 0; return;
+        setActive(); await commandRecoveryStore.clear(); attempts.current = 0;
+        restartStatusCheck(); return;
       }
       timer.current = setTimeout(() => void pollRef.current(id), pollDelay(++attempts.current, command.status === "awaitingApproval"));
     } catch (error) { if (error instanceof RemoteError && error.code === "commandNotFound") {
@@ -87,11 +91,10 @@ export function useRemoteCommands() {
       } else if (!await disconnectInvalid(error)) {
         setConnection("reconnecting"); timer.current = setTimeout(() => void pollRef.current(id), 3_000); } }
     finally { polling.current = false; }
-  }, [client, disconnectInvalid, sessionId, setActive, setConnection, addMessage, setLastCommand]);
+  }, [client, disconnectInvalid, sessionId, setActive, setConnection, addMessage, setLastCommand, restartStatusCheck]);
   useEffect(() => { pollRef.current = poll; }, [poll]);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  const restartStatusCheck = useConnectionMonitor(client, disconnectInvalid, setConnection);
 
 
   useEffect(() => {
@@ -102,8 +105,9 @@ export function useRemoteCommands() {
   useEffect(() => { const subscription = AppState.addEventListener("change", value => {
     if (value !== "active") return;
     if (active) { polling.current = false; void poll(active.commandId); }
-    else if (!SETTLED_CONNECTION.has(connection)) restartStatusCheck();
-  }); return () => subscription.remove(); }, [poll, active, connection, restartStatusCheck]);
+    // Always re-check on resume: even when connected, the Mac may have locked meanwhile.
+    else restartStatusCheck();
+  }); return () => subscription.remove(); }, [poll, active, restartStatusCheck]);
 
   const send = async (text: string) => {
     if (!client || active) return false;
@@ -153,6 +157,6 @@ export function useRemoteCommands() {
     await Promise.all([deviceCredentialStore.clear(), gatewayURLStore.clear(), commandRecoveryStore.clear()]);
     newConversation(); setCredential(); setGatewayURL();
     setConnection("deviceCredentialInvalid"); };
-  return { sessionId, gatewayURL, credential, connection, messages, active,
+  return { sessionId, gatewayURL, credential, connection, screenLocked, messages, active,
     lastCommand, send, decide, cancel, testConnection, disconnect };
 }

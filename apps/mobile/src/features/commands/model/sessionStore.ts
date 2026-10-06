@@ -12,12 +12,14 @@ interface RemoteSessionState {
   gatewayURL?: string;
   credential?: DeviceCredential;
   connection: ConnectionState;
+  screenLocked: boolean;
   messages: RemoteChatMessage[];
   active?: RemoteCommand;
   lastCommand?: LastCommandOutcome;
   setGatewayURL(value?: string): void;
   setCredential(value?: DeviceCredential): void;
   setConnection(value: ConnectionState): void;
+  setScreenLocked(value: boolean): void;
   addMessage(value: RemoteChatMessage): void;
   setActive(value?: RemoteCommand): void;
   setLastCommand(value?: LastCommandOutcome): void;
@@ -26,9 +28,10 @@ interface RemoteSessionState {
 }
 
 export const useRemoteSession = create<RemoteSessionState>(set => ({
-  sessionId: createId(), connection: "disconnected", messages: [],
+  sessionId: createId(), connection: "disconnected", screenLocked: false, messages: [],
   setGatewayURL: gatewayURL => set({ gatewayURL }),
   setCredential: credential => set({ credential }), setConnection: connection => set({ connection }),
+  setScreenLocked: screenLocked => set({ screenLocked }),
   addMessage: value => set(state => ({ messages: [...state.messages, value].slice(-100) })),
   setActive: active => set({ active }),
   setLastCommand: lastCommand => set({ lastCommand }),

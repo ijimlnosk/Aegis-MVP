@@ -6,4 +6,5 @@ export interface GatewayStatus {
   gateway: "ready";
   desktopBridge: "reachable" | "unavailable" | "unauthorized";
   pendingApprovals: number;
+  screenLocked?: boolean | null;
 }

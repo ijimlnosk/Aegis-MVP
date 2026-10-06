@@ -17,6 +17,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   let codingProviders = CodingAgentProviderPool()
   let autonomousDevelopment = AutonomousDevelopmentCoordinator()
   let desktopBridge = DesktopBridgeServer()
+  let keepAwake = RemoteKeepAwake()
   /// Set on bridge-session agents so diagnostics report the listening server, not this unstarted one.
   var desktopBridgeStatus: (() -> String)?
   lazy var developmentSessions = DevelopmentSessionCoordinator(memory: memoryStore.repository)
@@ -91,6 +92,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     restoreProactivePreferences()
     contextObserver.start()
     desktopBridge.start()
+    keepAwake.start()
     terminationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.willTerminateNotification, object: nil, queue: .main
     ) { [weak self] _ in Task { @MainActor in self?.stop() } }
@@ -99,6 +101,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   func stop() {
     contextObserver.stop()
     desktopBridge.stop()
+    keepAwake.stop()
     if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
     terminationObserver = nil
     codingFindings.removeAll(); activeCodingContinuation = nil

@@ -2,6 +2,8 @@ import type { BridgeCommandResult } from "./models.ts";
 
 export interface AegisCommandBridge {
   health(): Promise<"reachable" | "unavailable" | "unauthorized">;
+  /** Lock state reported by the last successful health check; null when unknown. */
+  readonly lastScreenLocked?: boolean | null;
   available(): Promise<boolean>;
   send(sessionId: string, commandId: string, text: string, signal: AbortSignal): Promise<BridgeCommandResult>;
   resolveApproval(sessionId: string, commandId: string, approvalId: string,
@@ -13,6 +15,7 @@ export interface AegisCommandBridge {
 export class DesktopHTTPBridge implements AegisCommandBridge {
   private readonly baseURL: URL;
   private readonly token: string;
+  lastScreenLocked: boolean | null = null;
   constructor(baseURL: URL, token: string) { this.baseURL = baseURL; this.token = token; }
 
   async available() {
@@ -26,9 +29,10 @@ export class DesktopHTTPBridge implements AegisCommandBridge {
       });
       if (response.status === 401) return "unauthorized";
       if (!response.ok) return "unavailable";
-      const body = await response.json() as { status?: unknown; service?: unknown };
+      const body = await response.json() as { status?: unknown; service?: unknown; screenLocked?: unknown };
+      this.lastScreenLocked = typeof body.screenLocked === "boolean" ? body.screenLocked : null;
       return body.status === "ok" && body.service === "AegisDesktopBridge" ? "reachable" : "unavailable";
-    } catch { return "unavailable"; }
+    } catch { this.lastScreenLocked = null; return "unavailable"; }
   }
 
   send(sessionId: string, commandId: string, text: string, signal: AbortSignal) {

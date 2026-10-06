@@ -24,10 +24,13 @@ extension AegisAgent {
     switch decision {
     case .execute(let step, let index, let total):
       executingStepID = step.id
+      if let locked = ScreenLockState.blockingMessage(for: step.action) { failCurrentStep(locked); return }
       chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 실행 중…")
       execute(step, request: executor.state.request)
     case .approval(let step, let index, let total):
       executingStepID = step.id
+      // Checked before asking so the phone never approves a step that cannot run.
+      if let locked = ScreenLockState.blockingMessage(for: step.action) { failCurrentStep(locked); return }
       if step.action == .executeCodingTask { codingTaskProposalLifecycle = .awaitingApproval }
       if step.action == .createCommit { gitWorkflowContext.state = .awaitingCommitApproval }
       if step.action == .pushCurrentBranch { gitWorkflowContext.state = .awaitingPushApproval }
@@ -41,6 +44,11 @@ extension AegisAgent {
       chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 건너뜀 · 이전 필수 단계 실패")
       advancePlan()
     case .preflightApproval(let id, let steps):
+      if let locked = steps.lazy.compactMap({ ScreenLockState.blockingMessage(for: $0.action) }).first {
+        speak(locked, role: .error)
+        if planExecutor?.rejectPreflight(id) == true { advancePlan() }
+        return
+      }
       prepareUIWorkflowPreflight(id: id, steps: steps, request: executor.state.request)
     case .finished(let summary):
       if let answer = PlanExecutionFormatter.format(summary,

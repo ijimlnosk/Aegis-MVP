@@ -63,7 +63,11 @@ Ubuntu에서는 저장소와 환경 설정을 배치한 뒤 `npm run server-agen
 
 휴대폰에서는 `http://<TAILSCALE_IP>:8790/`을 열어 토큰으로 연결합니다. 토큰은 페이지
 소스나 영구 브라우저 저장소에 넣지 않습니다. Mac이 깨어 있고 AegisDesktop,
-command bridge, Tailscale이 모두 실행 중일 때만 사용할 수 있습니다. 초기 버전은
+command bridge, Tailscale이 모두 실행 중일 때만 사용할 수 있습니다. 원격 제어가 켜져 있으면
+AegisDesktop이 실행되는 동안 Mac의 유휴 잠자기를 막습니다(`AEGIS_REMOTE_KEEP_AWAKE=false`로
+끌 수 있음). 외부 모니터 없이 노트북 덮개를 닫으면 여전히 잠듭니다. 화면이 잠겨 있으면
+화면 분석·UI 조작·카카오톡 전송은 승인 요청 전에 거절되고, 폰 상단에 "Mac 화면 잠김"이
+표시됩니다. 초기 버전은
 정규화된 텍스트만 반환하며 원본 스크린샷은 전송하지 않습니다.
 
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의

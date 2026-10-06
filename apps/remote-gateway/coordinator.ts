@@ -89,6 +89,7 @@ export class RemoteCommandCoordinator {
 
   diagnostics() { return this.audit.slice(-20); }
   desktopBridgeStatus() { return this.bridge.health(); }
+  desktopScreenLocked() { return this.bridge.lastScreenLocked ?? null; }
 
   private async run(stored: StoredCommand) {
     try {

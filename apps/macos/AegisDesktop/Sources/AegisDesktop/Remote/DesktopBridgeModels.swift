@@ -36,4 +36,7 @@ struct DesktopBridgeApprovalCard: Codable {
   let scope: String
 }
 
-struct DesktopBridgeHealth: Encodable { let status = "ok"; let service = "AegisDesktopBridge" }
+struct DesktopBridgeHealth: Encodable {
+  let status = "ok"; let service = "AegisDesktopBridge"
+  var screenLocked = ScreenLockState.isLocked
+}

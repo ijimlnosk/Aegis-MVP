@@ -28,7 +28,7 @@ export function ChatScreen() {
 
   return <SafeAreaView style={styles.screen}>
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-    <ConnectionHeader state={remote.connection} onSettings={() => setSettings(true)} />
+    <ConnectionHeader state={remote.connection} screenLocked={remote.screenLocked} onSettings={() => setSettings(true)} />
     <FlatList ref={list} data={remote.messages} keyExtractor={item => item.id}
       renderItem={({ item }) => <MessageBubble message={item} />} contentContainerStyle={styles.list}
       onScroll={onScroll} scrollEventThrottle={100} onContentSizeChange={onContentSizeChange}
