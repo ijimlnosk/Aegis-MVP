@@ -13,8 +13,9 @@ extension AegisAgent {
           let result = ProjectValidationRunner.run(check, project: project, at: url)
           await MainActor.run { self.finishValidation(result, step: step, request: request, project: project) }
         } catch {
-          let result = ProjectValidationResult(check: check, status: .skipped,
-            summary: "\(check.rawValue) 검사 도구를 실행할 수 없습니다: \(error.localizedDescription)")
+          // The project path itself is unusable, so this is a failure the user must fix, not a skip.
+          let result = ProjectValidationResult(check: check, status: .failed,
+            summary: "\(project) \(check.rawValue) 검사를 실행하지 못했습니다: \(error.localizedDescription)")
           await MainActor.run { self.finishValidation(result, step: step, request: request, project: project) }
         }
         return
@@ -79,10 +80,11 @@ extension AegisAgent {
                                 request: String, project: String) {
     busy = false; developerValidationResults[project, default: [:]][result.check] = result
     try? developmentSessions.record(project: project, action: step.action.rawValue)
-    let succeeded = result.succeedsPlan
+    // A check that could not run at all must not read as "완료" on the phone.
+    let succeeded = result.succeedsPlan && result.status != .skipped
     memoryStore.recordAction(request: request, action: step.action.rawValue,
       target: project, result: result.summary, succeeded: succeeded)
-    speak(result.summary, role: result.status == .failed ? .error : .assistant)
+    speak(result.summary, role: succeeded ? .assistant : .error)
     completeCurrentStep(succeeded: succeeded, result: result.summary)
   }
 
