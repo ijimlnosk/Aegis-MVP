@@ -12,10 +12,11 @@ extension AegisAgent {
   }
 
   func interpretMacApproval(_ text: String) {
-    let compact = text.replacingOccurrences(of: " ", with: "")
-    if ["취소", "그만", "하지마"].contains(where: compact.contains) { cancelMacAction(); return }
-    if ["실행", "진행", "승인", "응", "좋아", "그래"].contains(where: compact.contains) { confirmMacAction(); return }
-    reply = "실행할지 취소할지 다시 말씀해 주세요."
+    switch ApprovalReplyParser.decision(text) {
+    case .cancel: cancelMacAction(); return
+    case .approve: confirmMacAction(); return
+    case nil: speak("승인을 기다리는 작업이 있습니다. 버튼을 누르거나 '승인' 또는 '취소'라고 입력해 주세요.")
+    }
     startWakeListening()
   }
 
