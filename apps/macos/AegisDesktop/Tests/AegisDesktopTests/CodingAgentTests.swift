@@ -599,3 +599,22 @@ private func testFinding(project: String) -> CodingFindingContext {
   #expect(formatted.contains("분석 전부터 미커밋 변경 1건"))
   #expect(!formatted.contains("이번 작업 중 새 변경"))
 }
+
+@Test func validationRunRequestsRunChecksInsteadOfEditingCode() {
+  #expect(ValidationRunIntentResolver.checks(in: "SoolSool lint 실행해줘") == [.lint])
+  #expect(ValidationRunIntentResolver.checks(in: "SoolSool lint 검사해줘") == [.lint])
+  #expect(ValidationRunIntentResolver.checks(in: "PTFriends 타입체크랑 테스트 돌려줘") == [.typecheck, .test])
+  #expect(ValidationRunIntentResolver.checks(in: "PTFriends lint 오류 고쳐줘").isEmpty)
+  #expect(ValidationRunIntentResolver.checks(in: "PTFriends 테스트 추가해줘").isEmpty)
+  #expect(ValidationRunIntentResolver.checks(in: "PTFriends lint 경고 자세히 설명해줘").isEmpty)
+}
+
+@Test func codingRequestWithoutChangeVerbStaysReadOnly() throws {
+  let root = try DeveloperTestSupport.gitProject(); defer { try? FileManager.default.removeItem(at: root) }
+  let (memory, _) = try DeveloperTestSupport.repositories(project: root)
+  let unclear = CodingIntentResolver.plan(for: "PTFriends 코드 어때?", repository: memory)
+  #expect(unclear?.steps.first?.action == .analyzeProjectWithCodingAgent)
+  #expect(unclear?.steps.first?.codingMode == .readOnlyAnalysis)
+  let change = CodingIntentResolver.plan(for: "PTFriends lint 오류 고쳐줘", repository: memory)
+  #expect(change?.steps.first?.action == .executeCodingTask)
+}

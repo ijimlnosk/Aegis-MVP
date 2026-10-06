@@ -16,7 +16,7 @@ final class RemoteKeepAwake {
     guard assertion == nil, Self.isEnabled(environment) else { return }
     var id = IOPMAssertionID(0)
     let result = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
-      IOPMAssertionLevel(kIOPMAssertionLevelOn), "Aegis 원격 제어 대기" as CFString, &id)
+      IOPMAssertionLevel(kIOPMAssertionLevelOn), "Aegis remote control" as CFString, &id)
     if result == kIOReturnSuccess { assertion = id }
   }
 

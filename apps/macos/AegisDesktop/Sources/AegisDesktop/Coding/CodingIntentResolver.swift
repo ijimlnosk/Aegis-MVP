@@ -34,6 +34,8 @@ enum CodingIntentResolver {
     if ["롤백", "되돌려"].contains(where: text.contains) {
       return AgentPlan(step: AgentStep(action: .rollbackCodingTask, project: project.name))
     }
+    // Without an explicit change verb, read before writing; approval alone was the only guard before.
+    guard requestsChange(text) else { return readOnlyPlan(request: request, project: project) }
     let coding = AgentStep(action: .executeCodingTask,
       dependency: isScreenRequest(text) ? .requiresPreviousSuccess : .independent,
       content: request, project: project.name, codingMode: .workspaceWrite)
@@ -52,6 +54,11 @@ enum CodingIntentResolver {
     ["codex", "코덱스", "claude", "클로드", "코드", "typescript", "오류", "에러", "lint", "테스트",
      "리팩터", "고쳐", "수정", "롤백", "개선할 부분", "개선점", "문제점", "추가하거나 변경하면 좋",
      "추가하거나 바꾸면 좋", "변경하면 좋", "고치면 좋", "개선 제안", "추천"].contains(where: text.contains)
+  }
+
+  private static func requestsChange(_ text: String) -> Bool {
+    ["고쳐", "수정", "해결", "리팩터", "추가", "구현", "바꿔", "변경해", "작성", "만들어", "정리해",
+     "통과시켜", "통과하게", "없애", "제거", "적용", "fix"].contains(where: text.contains)
   }
 
   private static func isScreenRequest(_ text: String) -> Bool {
