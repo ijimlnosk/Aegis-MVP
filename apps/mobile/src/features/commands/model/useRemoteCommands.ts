@@ -2,38 +2,23 @@ import { AppState } from "react-native";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AegisRemoteClient } from "@/shared/api/aegisRemoteClient";
 import { RemoteError, requiresReRegistration } from "@/shared/api/remoteError";
-import type { ConnectionState } from "@/entities/connection/model/types";
 import { deviceCredentialStore } from "@/shared/storage/deviceCredentialStore";
 import { gatewayURLStore } from "@/shared/storage/gatewayURLStore";
 import { commandRecoveryStore } from "@/shared/storage/commandRecoveryStore";
 import { createId } from "@/shared/lib/createId";
 import { terminalCommandContent } from "@/entities/command/model/failureMessages";
 import { useRemoteSession } from "./sessionStore";
-import { pollDelay, reconnectDelay } from "./progress";
+import { pollDelay } from "./progress";
+import { connectionStateFor, SETTLED_CONNECTION } from "./connectionState";
+import { useConnectionMonitor } from "./useConnectionMonitor";
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"]);
-// "connected" is the only state the idle reconnect loop treats as settled; every other
-// outcome (gatewayServerError, gatewayUnavailable, authenticationFailed, desktopUnavailable, ...)
-// keeps retrying with backoff instead of leaving a stale error on screen forever.
-const SETTLED_CONNECTION: ReadonlySet<string> = new Set(["connected"]);
 
 // Bounded, secret-free diagnostics for physical-device debugging (dev builds only).
 // Never logs the master token, device credential, bridge token, or message content.
 function logCommandOutcome(commandId: string, sessionId: string, status: string, failureCode?: string) {
   if (!__DEV__) return;
   console.log("[AegisRemote]", { commandId, sessionPrefix: sessionId.slice(0, 8), status, failureCode: failureCode ?? null });
-}
-
-// Only connectivity/auth-shaped errors may change the connection indicator.
-// A per-command domain error (approvalExpired, validationFailed, ...) still means
-// the Gateway answered fine, so it leaves the connection state as "connected".
-const CONNECTIVITY_CODES: ReadonlySet<string> = new Set([
-  "gatewayUnavailable", "desktopUnavailable", "deviceCredentialInvalid",
-  "deviceRevoked", "deviceDisabled", "authenticationFailed", "gatewayServerError",
-]);
-function connectionStateFor(error: unknown): ConnectionState {
-  if (error instanceof RemoteError) return CONNECTIVITY_CODES.has(error.code) ? error.code as ConnectionState : "connected";
-  return "gatewayUnavailable";
 }
 
 export function useRemoteCommands() {
@@ -68,9 +53,6 @@ export function useRemoteCommands() {
   // cancelled) handling idempotent so an overlapping poll never adds a second chat message.
   const finalizedCommandIds = useRef<Set<string>>(new Set());
   const pollRef = useRef<(id: string) => Promise<void>>(async () => undefined);
-  const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const statusAttempts = useRef(0);
-  const checkStatusRef = useRef<() => void>(() => undefined);
   const activeCommandId = active?.commandId;
   const client = useMemo(() => credential && gatewayURL
     ? new AegisRemoteClient(gatewayURL, credential) : undefined, [gatewayURL, credential]);
@@ -109,26 +91,8 @@ export function useRemoteCommands() {
   useEffect(() => { pollRef.current = poll; }, [poll]);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const restartStatusCheck = useConnectionMonitor(client, disconnectInvalid, setConnection);
 
-  // Self-scheduling: on any non-"connected" outcome it reschedules itself with backoff
-  // instead of leaving a stale error on screen forever. Triggered by `client` identity
-  // changes (new credential/gatewayURL) and by app foreground resume below -- never by
-  // its own setConnection() call, so it can't loop tight like the bug this replaced.
-  const checkStatus = useCallback(() => {
-    if (!client) return;
-    void client.status().then(status => { statusAttempts.current = 0;
-      setConnection(status.desktopBridge === "reachable" ? "connected" : "desktopUnavailable");
-      if (status.desktopBridge !== "reachable") {
-        statusTimer.current = setTimeout(() => checkStatusRef.current(), reconnectDelay(++statusAttempts.current));
-      }
-    }).catch(error => void disconnectInvalid(error).then(handled => { if (handled) return;
-      setConnection(connectionStateFor(error));
-      statusTimer.current = setTimeout(() => checkStatusRef.current(), reconnectDelay(++statusAttempts.current));
-    }));
-  }, [client, disconnectInvalid, setConnection]);
-  useEffect(() => { checkStatusRef.current = checkStatus; }, [checkStatus]);
-  useEffect(() => { statusAttempts.current = 0; checkStatusRef.current();
-    return () => { if (statusTimer.current) clearTimeout(statusTimer.current); }; }, [client]);
 
   useEffect(() => {
     if (client && activeCommandId && !pendingSubmissionIds.current.has(activeCommandId)) {
@@ -138,11 +102,8 @@ export function useRemoteCommands() {
   useEffect(() => { const subscription = AppState.addEventListener("change", value => {
     if (value !== "active") return;
     if (active) { polling.current = false; void poll(active.commandId); }
-    else if (!SETTLED_CONNECTION.has(connection)) {
-      if (statusTimer.current) clearTimeout(statusTimer.current);
-      statusAttempts.current = 0; checkStatusRef.current();
-    }
-  }); return () => subscription.remove(); }, [poll, active, connection]);
+    else if (!SETTLED_CONNECTION.has(connection)) restartStatusCheck();
+  }); return () => subscription.remove(); }, [poll, active, connection, restartStatusCheck]);
 
   const send = async (text: string) => {
     if (!client || active) return false;
