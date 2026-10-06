@@ -9,7 +9,8 @@ enum AgentPlannerError: LocalizedError {
 }
 
 enum AgentPlanner {
-  static func plan(for request: String, memory: MemoryContext) async throws -> AgentPlan {
+  static func plan(for request: String, memory: MemoryContext,
+                   metrics: PlannerMetrics? = nil) async throws -> AgentPlan {
     if let diagnostics = AIBackendIntentResolver.plan(for: request) { return diagnostics }
     if let capability = CapabilityIntentResolver.plan(for: request) { return capability }
     if let deterministic = MultiStepIntentParser.parse(memory.request) { return deterministic }
@@ -26,45 +27,59 @@ enum AgentPlanner {
     }
     if let serverPlan = ServerIntentParser.parse(memory.request) { return AgentPlan(step: serverPlan) }
     let content = plannerContent(request: memory.request, memories: memory.records)
-    let generated = try await generate(system: AgentPlannerPrompt.system, content: content)
+    let scope = PlannerActionScope.select(for: memory.request, mentionsProject: memory.project != nil)
+    let generated = try await generate(system: AgentPlannerPrompt.system(for: scope.domains),
+      content: content, scope: scope, metrics: metrics)
     let first = PlanDependencyNormalizer.normalize(generated)
     let firstErrors = AgentPlanValidator.errors(in: first, for: request)
     if firstErrors.isEmpty { return MemoryRetriever.applyBrowserPreference(to: first, request: request, context: memory) }
+    // The retry widens to every domain in case the narrowed scope hid the action the request needed.
     let retried = try await generate(
       system: AgentPlannerPrompt.system + "\n이전 계획이 유효하지 않았다. 필수 필드와 원래 요청 의도를 확인해 한 번만 수정한다.",
-      content: content + "\n\n이전 계획 오류: \(firstErrors.joined(separator: ", "))")
+      content: content + "\n\n이전 계획 오류: \(firstErrors.joined(separator: ", "))",
+      scope: .full, metrics: metrics)
     let retry = PlanDependencyNormalizer.normalize(retried)
     let retryErrors = AgentPlanValidator.errors(in: retry, for: request)
     guard retryErrors.isEmpty else { throw AgentPlannerError.invalidPlan(retryErrors) }
     return MemoryRetriever.applyBrowserPreference(to: retry, request: request, context: memory)
   }
 
-  private static func generate(system: String, content: String) async throws -> AgentPlan {
+  private static func generate(system: String, content: String, scope: PlannerActionScope,
+                               metrics: PlannerMetrics?) async throws -> AgentPlan {
+    let schema = schema(for: scope.actions)
+    let timed = TimedPlannerCall(promptCharacters: system.count + content.count, scope: scope, metrics: metrics)
     if CodexPlannerConfiguration.isEnabled {
-      do { return try await CodexPlanner().plan(system: system, content: content, schema: schema) }
+      do { return try await timed.run("codex") { try await CodexPlanner().plan(system: system, content: content, schema: schema) } }
       catch { /* Preserve the configured local planner as a bounded availability fallback. */ }
     }
-    return try await Ollama.structured(system: system, content: content, schema: schema)
+    return try await timed.run("ollama") { try await Ollama.structured(system: system, content: content, schema: schema) }
   }
 
   private static func plannerContent(request: String, memories: [MemoryRecord]) -> String {
     "참고용 메모리 데이터:\n\(AgentPlannerPrompt.memoryData(memories))\n\n현재 요청: \(request)"
   }
 
-  static let schema: [String: Any] = [
-    "type": "object",
-    "properties": [
-      "steps": ["type": "array", "minItems": 0, "maxItems": AgentPlan.maximumSteps,
-        "items": stepSchema],
-      "finalAnswer": ["type": "string"],
-    ],
-    "required": ["steps"],
-  ]
+  static let schema = schema(for: AgentAction.plannable)
+
+  static func schema(for actions: [AgentAction]) -> [String: Any] {
+    var step = stepSchema
+    var properties = step["properties"] as? [String: Any] ?? [:]
+    properties["action"] = ["type": "string", "enum": actions.filter { $0 != .answer }.map(\.rawValue)]
+    step["properties"] = properties
+    return [
+      "type": "object",
+      "properties": [
+        "steps": ["type": "array", "minItems": 0, "maxItems": AgentPlan.maximumSteps, "items": step],
+        "finalAnswer": ["type": "string"],
+      ],
+      "required": ["steps"],
+    ]
+  }
 
   private static let stepSchema: [String: Any] = [
     "type": "object",
     "properties": [
-      "action": ["type": "string", "enum": AgentAction.plannable.filter { $0 != .answer }.map(\.rawValue)],
+      "action": ["type": "string"],
       "dependency": ["type": "string", "enum": ["independent", "requires_previous_success"]],
       "recipient": ["type": "string"], "body": ["type": "string"],
       "application": ["type": "string"], "browser": ["type": "string"],

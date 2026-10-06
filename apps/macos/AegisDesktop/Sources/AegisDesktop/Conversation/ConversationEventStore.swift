@@ -116,14 +116,7 @@ final class ConversationEventStore {
     }
   }
 
-  private func scrub(_ value: String) -> String {
-    let patterns = [#"(?i)(bearer\s+)[A-Za-z0-9._~+/-]+"#,
-      #"(?i)((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+"#,
-      #"\b(?:sk|ghp|github_pat)_[A-Za-z0-9_\-]{12,}\b"#]
-    return patterns.reduce(value) { text, pattern in
-      text.replacingOccurrences(of: pattern, with: "$1[REDACTED]", options: .regularExpression)
-    }
-  }
+  private func scrub(_ value: String) -> String { SecretRedactor.redact(value) }
 
   private func json<T: Encodable>(_ value: T) -> String {
     (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"

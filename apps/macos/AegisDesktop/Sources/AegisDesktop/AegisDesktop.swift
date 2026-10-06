@@ -86,13 +86,15 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     self.surface(notices)
   }
   @Published var reply = "Aegis가 준비되었습니다."
-  @Published var busy = false
+  @Published var busy = false { didSet { scheduleTimingFinish() } }
   @Published var listening = false
   @Published var transcript = ""
   @Published var heardText = ""
   @Published var commandListening = false
-  @Published var pendingKakaoMessage: KakaoMessage?
-  @Published var pendingMacAction: PendingMacAction?
+  @Published var pendingKakaoMessage: KakaoMessage? { didSet { scheduleTimingFinish() } }
+  @Published var pendingMacAction: PendingMacAction? { didSet { scheduleTimingFinish() } }
+  var requestTiming: RequestTimingTracker?
+  var timingStore = RequestTimingStore.standard
   @Published var sampleStatus = ""
   @Published var activitySteps = ["호출어 대기 중"]
   @Published var hasWakeCandidate = false
@@ -359,6 +361,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     guard !message.isEmpty else { return }
     activeConversationTurnID = conversationEvents.begin(sessionId: conversationSessionID, request: message)
     chat.append(.user, message)
+    requestTiming = RequestTimingTracker(source: remoteCommandID == nil ? "desktop" : "remote", request: message)
     if CodingAgentProviderPolicy.rejects(message) {
       speak(CodingAgentProviderPolicy.unsupportedMessage); return
     }
@@ -578,7 +581,8 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
           busy = false; execute(projectPlan, request: message); return
         }
         let memory = MemoryRetriever.relevant(to: message, repository: memoryStore.repository)
-        let plan = try await AgentPlanner.plan(for: message, memory: memory)
+        let plan = try await AgentPlanner.plan(for: message, memory: memory,
+          metrics: requestTiming?.planner)
         busy = false
         execute(plan, request: message)
       } catch {
@@ -590,6 +594,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   private func execute(_ plan: AgentPlan, request: String, skill: LearnedSkill? = nil) {
     do {
+      requestTiming?.setPlan(plan.steps.map { $0.action.rawValue })
       if let turn = activeConversationTurnID {
         conversationEvents.setPlan(plan.steps.map { $0.action.rawValue }, turnId: turn)
       }
@@ -1169,6 +1174,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   func speak(_ text: String, role: ChatRole = .assistant) {
     reply = text
     chat.append(role, text)
+    scheduleTimingFinish()
     if let turn = activeConversationTurnID {
       conversationEvents.appendResponse(text, turnId: turn)
       conversationEvents.setStatus(role == .error ? "failed" : "responded", turnId: turn)

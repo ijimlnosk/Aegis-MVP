@@ -34,7 +34,7 @@ struct CodexPlanner {
     defer { try? FileManager.default.removeItem(at: folder) }
     let schemaURL = folder.appending(path: "schema.json")
     let resultURL = folder.appending(path: "result.json")
-    try JSONSerialization.data(withJSONObject: schema).write(to: schemaURL)
+    try JSONSerialization.data(withJSONObject: StrictOutputSchema.make(schema)).write(to: schemaURL)
     try await run(prompt: prompt(system, content), folder: folder,
       schemaURL: schemaURL, resultURL: resultURL)
     guard let data = try? Data(contentsOf: resultURL),
