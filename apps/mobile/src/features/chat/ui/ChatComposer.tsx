@@ -17,8 +17,8 @@ export function ChatComposer({ disabled, onSend }: { disabled: boolean; onSend(v
     {/* TextInput stays editable=true always: toggling it off fires Android's HIDE_SOFT_INPUT_FROM_VIEW mid-command. */}
     <View style={styles.row}><TextInput style={styles.input} multiline value={text} onChangeText={setText}
       placeholder="Aegis에게 요청... (/ 로 명령어)" placeholderTextColor={colors.muted} />
-      <TouchableOpacity accessibilityRole="button" style={[styles.send, disabled && styles.disabled]}
-        disabled={disabled} onPress={() => submit()}><Text style={styles.sendText}>Send</Text></TouchableOpacity></View>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="요청 전송" style={[styles.send, disabled && styles.disabled]}
+        disabled={disabled} onPress={() => submit()}><Text style={styles.sendText}>전송</Text></TouchableOpacity></View>
   </View>;
 }
 const styles = StyleSheet.create({ wrap: { borderTopColor: colors.border, borderTopWidth: 1, paddingTop: 8, backgroundColor: colors.background },
