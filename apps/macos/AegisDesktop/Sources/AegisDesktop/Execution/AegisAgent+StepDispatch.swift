@@ -3,7 +3,7 @@ import Foundation
 extension AegisAgent {
   func execute(_ step: AgentStep, request: String) {
     let action = step.action.rawValue
-    recordActivity("AI 선택: \(action)")
+    recordActivity("선택한 작업: \(step.action.displayName)")
     switch step.action {
     case .kakaoMessage:
       guard let recipient = step.recipient?.trimmingCharacters(in: .whitespacesAndNewlines), !recipient.isEmpty,

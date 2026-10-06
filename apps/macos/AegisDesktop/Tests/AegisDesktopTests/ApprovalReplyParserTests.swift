@@ -24,3 +24,10 @@ import Testing
   #expect(ApprovalPresentation.present(kind: "set_ui_text").confirmLabel == "진행")
   #expect(ApprovalPresentation.present(kind: nil).confirmLabel == "승인")
 }
+
+@Test func everyActionHasAKoreanDisplayName() {
+  for action in AgentAction.allCases {
+    #expect(!action.displayName.isEmpty)
+    #expect(!action.displayName.contains("_"))
+  }
+}

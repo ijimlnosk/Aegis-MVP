@@ -25,7 +25,7 @@ extension AegisAgent {
     case .execute(let step, let index, let total):
       executingStepID = step.id
       if let locked = ScreenLockState.blockingMessage(for: step.action) { failCurrentStep(locked); return }
-      chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 실행 중…")
+      chat.append(.system, "\(index)/\(total) \(step.action.displayName) 중…")
       execute(step, request: executor.state.request)
     case .approval(let step, let index, let total):
       executingStepID = step.id
@@ -41,7 +41,7 @@ extension AegisAgent {
         requestStepApproval(step, request: executor.state.request, progress: "\(index)/\(total)")
       }
     case .skipped(let step, let index, let total):
-      chat.append(.system, "\(index)/\(total) \(step.action.rawValue) 건너뜀 · 이전 필수 단계 실패")
+      chat.append(.system, "\(index)/\(total) \(step.action.displayName) 건너뜀 · 이전 단계가 실패했습니다")
       advancePlan()
     case .preflightApproval(let id, let steps):
       if let locked = steps.lazy.compactMap({ ScreenLockState.blockingMessage(for: $0.action) }).first {
