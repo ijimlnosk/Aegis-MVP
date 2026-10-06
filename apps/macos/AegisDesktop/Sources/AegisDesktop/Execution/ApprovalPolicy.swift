@@ -17,8 +17,12 @@ enum ApprovalPolicy {
     return purpose.risk
   }
 
-  static func requiresApproval(for step: AgentStep) -> Bool {
-    requiresApproval(for: risk(for: step))
+  static func requiresApproval(for step: AgentStep,
+                               autoValidationProjects: Set<String> = AutoValidationProjects.current) -> Bool {
+    if step.action.runsProjectScript {
+      return !AutoValidationProjects.allows(step.project, in: autoValidationProjects)
+    }
+    return requiresApproval(for: risk(for: step))
   }
 
   static func risk(for action: AgentAction) -> ActionRisk {
@@ -76,5 +80,13 @@ enum ApprovalPolicy {
   static func requiresApproval(for risk: ActionRisk) -> Bool {
     [.localInteraction, .localMutation, .remoteMutation, .sensitiveInteraction,
      .destructive].contains(risk)
+  }
+}
+
+extension AgentAction {
+  /// Validation actions that execute the project's own package.json scripts.
+  var runsProjectScript: Bool {
+    [.runProjectTypecheck, .runProjectLint, .runProjectTests, .runProjectBuild,
+     .verifyCodingTask].contains(self)
   }
 }

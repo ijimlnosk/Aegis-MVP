@@ -59,7 +59,10 @@ Code이며 `default_code_editor` preference 또는 현재 요청의 Cursor/Xcode
 개발 프로젝트 조회도 같은 registry/project memory 경계를 사용합니다. Git 조회는
 고정된 `/usr/bin/git` 인자만 사용하고, package 검증은 lockfile로 npm/pnpm/yarn을
 판별한 뒤 `package.json`에 실제로 존재하는 `typecheck`, `test`, `lint`, `build`
-스크립트만 안전 검증으로 자동 실행합니다. Plan은 명령어나 경로를 전달할 수 없습니다.
+스크립트만 실행합니다. Plan은 명령어나 경로를 전달할 수 없습니다. 이 스크립트는
+프로젝트 자체 코드이므로 `AEGIS_AUTO_VALIDATION_PROJECTS`(쉼표 구분, 대소문자 무시)에
+등록한 프로젝트만 자동 실행하고, 나머지는 실행할 때마다 승인을 받습니다. 값은 앱 시작 시
+한 번 읽으므로 바꾼 뒤에는 앱을 다시 시작해야 합니다.
 
 개발 세션은 같은 SQLite 파일의 `development_sessions` 테이블에 프로젝트, 시작/종료
 시간, 시작/종료 Git snapshot, Aegis 작업, 요약을 저장합니다. 소스·diff·README·커밋
@@ -71,7 +74,7 @@ Code이며 `default_code_editor` preference 또는 현재 요청의 Cursor/Xcode
 도구 실행 자체를 평가하지 못한 경우는 `unknown`으로 보고합니다.
 
 승인은 `ActionRisk`에 따라 결정됩니다. 고정 Git 조회는 `safeRead`, 검증된 package
-script 실행은 `safeValidation`이므로 자동 실행합니다. 앱·클립보드 변경은
+script 실행은 `safeValidation`이지만 허용 목록에 있는 프로젝트만 자동 실행합니다. 앱·클립보드 변경은
 `localMutation`, Docker·메시지 작업은 `remoteMutation`으로 계속 명시적 승인을
 요구합니다. 임의 명령, git push, 배포 action은 제공하지 않습니다.
 

@@ -75,7 +75,9 @@ extension AegisAgent {
         speak(CodingTaskFormatter.validationExplanation(result))
       } else if let saved = conversationEvents.latestValidationResponse(
         sessionId: conversationSessionID, excluding: activeConversationTurnID) {
+        // Re-running scripts here would bypass approval, so only allowlisted projects refresh.
         if let project = ProjectEntityResolver.resolve(in: saved, repository: memoryStore.repository),
+          AutoValidationProjects.allows(project.name, in: AutoValidationProjects.current),
           let root = try? ProjectCommandPolicy.projectURL(project.name, repository: memoryStore.repository) {
           let report = ProjectValidationService.run(project: project.name, root: root,
             repository: memoryStore.repository)

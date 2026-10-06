@@ -32,6 +32,9 @@ extension AegisAgent {
     case .runProjectTypecheck, .runProjectTests, .runProjectLint, .runProjectBuild:
       title = "\(step.project ?? "") 프로젝트 검증"
       detail = "등록된 package.json의 \(step.action.rawValue.replacingOccurrences(of: "run_project_", with: "")) 스크립트를 실행합니다."
+    case .verifyCodingTask:
+      title = "\(step.project ?? "") 코딩 작업 검증"
+      detail = "등록된 package.json의 typecheck/lint/test/build 스크립트를 실행합니다."
     case .executeCodingTask:
       title = "\(step.project ?? "") 코딩 작업"
       detail = activeCodingTaskProposal.map(CodingFindingProposalFormatter.format)
