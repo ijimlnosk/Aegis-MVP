@@ -87,11 +87,13 @@ ntfy 서버로 알림을 보냅니다. 폰에서 보낸 작업이 승인을 기�
 sol-server 예시:
 
 ```bash
-docker run -d --name ntfy --restart unless-stopped -p 8080:80 \
-  -v ntfy-cache:/var/cache/ntfy binwiederhier/ntfy serve --cache-file /var/cache/ntfy/cache.db
+# 모든 인터페이스가 아니라 sol-server의 Tailscale 주소에만 bind합니다.
+docker run -d --name ntfy --restart unless-stopped -p <TAILSCALE_IP>:8080:80 \
+  -v ntfy-cache:/var/cache/ntfy binwiederhier/ntfy serve \
+  --cache-file /var/cache/ntfy/cache.db --base-url http://<TAILSCALE_IP>:8080
 ```
 
-폰에 ntfy 앱을 설치하고 서버 `http://sol-server:8080`에서 같은 topic을 구독합니다.
+폰에 ntfy 앱을 설치하고 서버 `http://<TAILSCALE_IP>:8080`에서 같은 topic을 구독합니다.
 iOS 앱은 자체 서버 알림을 받으려면 서버에 `upstream-base-url` 설정이 추가로 필요합니다.
 
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
