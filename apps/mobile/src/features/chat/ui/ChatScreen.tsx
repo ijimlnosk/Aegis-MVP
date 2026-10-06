@@ -7,6 +7,8 @@ import { CommandProgressCard } from "@/features/commands/ui/CommandProgressCard"
 import { useRemoteCommands } from "@/features/commands/model/useRemoteCommands";
 import { SettingsSheet } from "@/features/settings/ui/SettingsSheet";
 import { colors } from "@/shared/ui/theme";
+import { composerBlockReason } from "../model/composerState";
+import { useRecentRequests } from "../model/useRecentRequests";
 import { ChatComposer } from "./ChatComposer";
 import { MessageBubble } from "./MessageBubble";
 
@@ -14,6 +16,7 @@ const NEAR_BOTTOM_PX = 80;
 
 export function ChatScreen() {
   const remote = useRemoteCommands(); const [settings, setSettings] = useState(false);
+  const recent = useRecentRequests();
   const list = useRef<FlatList>(null); const nearBottom = useRef(true);
   const approval = remote.active?.pendingApproval;
 
@@ -24,7 +27,9 @@ export function ChatScreen() {
   // New content (a poll/progress update) only autoscrolls if the user was already
   // near the bottom -- reading older history is never interrupted.
   const onContentSizeChange = () => { if (nearBottom.current) list.current?.scrollToEnd({ animated: true }); };
-  const onSend = (value: string) => { nearBottom.current = true; void remote.send(value); list.current?.scrollToEnd({ animated: true }); };
+  const onSend = (value: string) => {
+    nearBottom.current = true; recent.remember(value); void remote.send(value); list.current?.scrollToEnd({ animated: true });
+  };
 
   return <SafeAreaView style={styles.screen}>
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -36,8 +41,8 @@ export function ChatScreen() {
         ? <ApprovalCard approval={approval} onDecision={value => void remote.decide(value)}
             onCancel={() => void remote.cancel()} />
         : remote.active ? <CommandProgressCard command={remote.active} onCancel={() => void remote.cancel()} /> : null}</View>} />
-    <View style={styles.composer}><ChatComposer disabled={Boolean(remote.active) || remote.connection !== "connected"}
-      onSend={onSend} /></View>
+    <View style={styles.composer}><ChatComposer blockedReason={composerBlockReason(remote.connection, remote.active)}
+      quick={recent.quick} onSend={onSend} /></View>
     <SettingsSheet visible={settings} gatewayURL={remote.gatewayURL} credential={remote.credential} connection={remote.connection}
       lastCommand={remote.lastCommand}
       onClose={() => setSettings(false)} onTest={async () => remote.testConnection()}

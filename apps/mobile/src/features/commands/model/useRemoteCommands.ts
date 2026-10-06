@@ -5,6 +5,7 @@ import { RemoteError, requiresReRegistration } from "@/shared/api/remoteError";
 import { deviceCredentialStore } from "@/shared/storage/deviceCredentialStore";
 import { gatewayURLStore } from "@/shared/storage/gatewayURLStore";
 import { commandRecoveryStore } from "@/shared/storage/commandRecoveryStore";
+import { recentRequestStore } from "@/shared/storage/recentRequestStore";
 import { createId } from "@/shared/lib/createId";
 import { terminalCommandContent } from "@/entities/command/model/failureMessages";
 import { useRemoteSession } from "./sessionStore";
@@ -154,7 +155,8 @@ export function useRemoteCommands() {
     polling.current = false; void poll(command.commandId); };
   const testConnection = async () => client?.status();
   const disconnect = async () => { if (client && credential) await client.revoke().catch(() => undefined);
-    await Promise.all([deviceCredentialStore.clear(), gatewayURLStore.clear(), commandRecoveryStore.clear()]);
+    await Promise.all([deviceCredentialStore.clear(), gatewayURLStore.clear(), commandRecoveryStore.clear(),
+      recentRequestStore.clear()]);
     newConversation(); setCredential(); setGatewayURL();
     setConnection("deviceCredentialInvalid"); };
   return { sessionId, gatewayURL, credential, connection, screenLocked, messages, active,
