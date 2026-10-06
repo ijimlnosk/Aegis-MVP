@@ -76,6 +76,8 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   let codingProviders = CodingAgentProviderPool()
   let autonomousDevelopment = AutonomousDevelopmentCoordinator()
   let desktopBridge = DesktopBridgeServer()
+  /// Set on bridge-session agents so diagnostics report the listening server, not this unstarted one.
+  var desktopBridgeStatus: (() -> String)?
   lazy var developmentSessions = DevelopmentSessionCoordinator(memory: memoryStore.repository)
   lazy var proactiveCoordinator = ProactiveCoordinator(memory: memoryStore.repository)
   lazy var contextObserver = ContextObserver { [weak self] in
@@ -692,7 +694,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     case .getRemoteControlStatus:
       Task {
         let result = await RemoteControlDiagnostics.report(bridge: .load(),
-          desktopBridgeStatus: desktopBridge.status)
+          desktopBridgeStatus: desktopBridgeStatus?() ?? desktopBridge.status)
         finishReadTool(result, action: action, request: request)
       }
     case .listRunningApplications:

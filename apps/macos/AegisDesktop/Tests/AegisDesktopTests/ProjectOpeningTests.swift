@@ -2,6 +2,14 @@ import Foundation
 import Testing
 @testable import AegisDesktop
 
+@Test func aegisMVPResolvesFromRegisteredEnvironmentPath() throws {
+  let directory = try DeveloperTestSupport.directory()
+  let repository = try openingRepository()
+  let project = ProjectEntityResolver.resolve(name: "aegis-mvp", repository: repository,
+    environment: ["AEGIS_MVP_PROJECT_ROOT": directory.path])
+  #expect(project == ProjectEntity(name: "Aegis-MVP", aliases: [], path: directory.path))
+}
+
 @Test func knownPTFriendsProjectResolvesForVSCode() throws {
   let directory = try temporaryProject()
   let repository = try openingRepository()

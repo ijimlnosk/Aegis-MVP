@@ -59,3 +59,17 @@ import Testing
   #expect(first.agent !== second.agent)
   #expect(!first.hasActiveCommand)
 }
+
+@Test func remoteEnvironmentFindsRepositoryEnvFromSignedAppBundle() {
+  let bundle = URL(fileURLWithPath: "/repo/apps/macos/AegisDesktop/.build/AegisDesktop.app")
+  let executable = bundle.appending(path: "Contents/MacOS/AegisDesktop")
+  let candidates = RemoteEnvironment.candidates(bundleURL: bundle, executableURL: executable)
+  #expect(candidates.last?.path == "/repo/.env.local")
+}
+
+@Test func remoteEnvironmentFindsRepositoryEnvFromSwiftRunBinary() {
+  let executable = URL(fileURLWithPath: "/repo/apps/macos/AegisDesktop/.build/arm64-apple-macosx/debug/AegisDesktop")
+  let candidates = RemoteEnvironment.candidates(bundleURL: executable.deletingLastPathComponent(),
+    executableURL: executable)
+  #expect(candidates.last?.path == "/repo/.env.local")
+}

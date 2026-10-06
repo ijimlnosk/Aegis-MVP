@@ -91,7 +91,9 @@ final class DesktopBridgeServer {
 
   private func session(_ id: String) -> DesktopBridgeSession {
     if let existing = sessions[id] { return existing }
-    let created = DesktopBridgeSession(sessionID: id); sessions[id] = created; return created
+    let created = DesktopBridgeSession(sessionID: id)
+    created.agent.desktopBridgeStatus = { [weak self] in self?.status ?? "stopped" }
+    sessions[id] = created; return created
   }
 
 }

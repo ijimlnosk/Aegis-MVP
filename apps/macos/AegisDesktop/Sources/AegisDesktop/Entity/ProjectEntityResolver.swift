@@ -14,7 +14,8 @@ enum ProjectEntityResolver {
   static func knownProjects(repository: MemoryRepository,
                             environment: [String: String]? = nil) -> [ProjectEntity] {
     let environment = environment ?? registeredEnvironment()
-    let definitions = [("PTFriends", "PTFRIENDS_PROJECT_ROOT"),
+    let definitions = [("Aegis-MVP", "AEGIS_MVP_PROJECT_ROOT"),
+      ("PTFriends", "PTFRIENDS_PROJECT_ROOT"),
       ("SoolSool", "SOOLSOOL_PROJECT_ROOT"), ("sol-server", "SOL_SERVER_PROJECT_ROOT")]
     let configured = definitions.compactMap { name, key in
       environment[key]?.isEmpty == false ? name : nil
@@ -62,7 +63,8 @@ enum ProjectEntityResolver {
     lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
   }
   private static func displayName(_ value: String) -> String {
-    let names = ["ptfriends": "PTFriends", "soolsool": "SoolSool", "sol-server": "sol-server"]
+    let names = ["aegis-mvp": "Aegis-MVP", "ptfriends": "PTFriends",
+      "soolsool": "SoolSool", "sol-server": "sol-server"]
     return names[value.lowercased()] ?? value
   }
 
@@ -74,6 +76,12 @@ enum ProjectEntityResolver {
         .appending(path: ".env.local")]
     for url in candidates {
       guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+      let projectRoot = url.deletingLastPathComponent()
+      if values["AEGIS_MVP_PROJECT_ROOT"] == nil,
+        projectRoot.lastPathComponent.compare("Aegis-MVP", options: .caseInsensitive) == .orderedSame,
+        FileManager.default.fileExists(atPath: projectRoot.appending(path: ".git").path) {
+        values["AEGIS_MVP_PROJECT_ROOT"] = projectRoot.path
+      }
       for line in text.split(separator: "\n") {
         let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
         if parts.count == 2, !parts[0].hasPrefix("#"), values[parts[0]] == nil { values[parts[0]] = parts[1] }

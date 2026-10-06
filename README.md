@@ -26,6 +26,7 @@ npm run dev
 
 ```dotenv
 OPENAI_API_KEY=sk-proj-...
+AEGIS_MVP_PROJECT_ROOT=/Users/your-name/Aegis-MVP
 PTFRIENDS_PROJECT_ROOT=/Users/your-name/ptfriendsapp
 SOOLSOOL_PROJECT_ROOT=/Users/your-name/soolsool
 SOL_SERVER_PROJECT_ROOT=/srv/sol-server

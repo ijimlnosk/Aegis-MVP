@@ -70,18 +70,24 @@ enum RemoteEnvironment {
     return values
   }
 
-  private static func candidates() -> [URL] {
+  static func candidates(bundleURL: URL = Bundle.main.bundleURL,
+                         executableURL: URL? = Bundle.main.executableURL) -> [URL] {
     let support = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: "Library/Application Support/Aegis/config.env")
     let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: ".env.local")
     var result = [support, current]
-    if let executable = Bundle.main.executableURL {
-      let root = executable.deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent()
-      result.append(root.appending(path: ".env.local"))
+    // <repo>/apps/macos/AegisDesktop/.build/AegisDesktop.app for the signed bundle,
+    // <repo>/apps/macos/AegisDesktop/.build/<triple>/debug/AegisDesktop for `swift run`.
+    if bundleURL.pathExtension == "app" {
+      result.append(ancestor(of: bundleURL, levels: 5).appending(path: ".env.local"))
+    } else if let executableURL {
+      result.append(ancestor(of: executableURL, levels: 7).appending(path: ".env.local"))
     }
     return result
+  }
+
+  private static func ancestor(of url: URL, levels: Int) -> URL {
+    (0..<levels).reduce(url) { current, _ in current.deletingLastPathComponent() }
   }
 }
 
