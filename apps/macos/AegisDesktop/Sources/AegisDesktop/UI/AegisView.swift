@@ -11,8 +11,7 @@ struct AegisView: View {
           Text("TEXT CHAT · LOCAL MAC INTELLIGENCE").font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Label(agent.busy ? "처리 중" : "준비됨", systemImage: "circle.fill")
-          .foregroundStyle(agent.busy ? .orange : .green)
+        Label(statusText, systemImage: "circle.fill").foregroundStyle(statusColor)
         Button("백그라운드") { NSApplication.shared.keyWindow?.close() }
           .help("창만 닫고 원격 작업과 Aegis Bridge는 계속 실행합니다.")
       }
@@ -22,5 +21,15 @@ struct AegisView: View {
         cancel: agent.cancelCurrentOperation,
         approve: agent.approveChatAction, reject: agent.rejectChatAction)
     }
+  }
+
+  private var statusText: String {
+    if agent.pendingMacAction != nil { return "승인 대기" }
+    return agent.busy ? "처리 중" : "준비됨"
+  }
+
+  private var statusColor: Color {
+    if agent.pendingMacAction != nil { return .orange }
+    return agent.busy ? .blue : .green
   }
 }

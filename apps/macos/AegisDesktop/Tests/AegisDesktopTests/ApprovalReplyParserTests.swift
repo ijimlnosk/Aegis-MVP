@@ -15,3 +15,12 @@ import Testing
   #expect(ApprovalReplyParser.decision("진행하지마") == .cancel)
   #expect(ApprovalReplyParser.decision("그건 거절할게") == .cancel)
 }
+
+@Test func approvalPresentationNamesTheActionAndFlagsIrreversibleOnes() {
+  let kakao = ApprovalPresentation.present(kind: "kakao_message")
+  #expect(kakao.confirmLabel == "보내기" && kakao.irreversible)
+  #expect(!ApprovalPresentation.present(kind: "create_commit").irreversible)
+  #expect(ApprovalPresentation.present(kind: "run_project_lint").confirmLabel == "실행")
+  #expect(ApprovalPresentation.present(kind: "set_ui_text").confirmLabel == "진행")
+  #expect(ApprovalPresentation.present(kind: nil).confirmLabel == "승인")
+}

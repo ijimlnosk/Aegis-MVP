@@ -10,8 +10,9 @@ final class ChatStore: ObservableObject {
     messages.append(ChatMessage(id: id, role: role, content: content))
   }
 
-  func appendApproval(id: UUID, content: String) {
-    messages.append(ChatMessage(id: id, role: .approval, content: content, approvalState: .pending))
+  func appendApproval(id: UUID, content: String, kind: String? = nil) {
+    messages.append(ChatMessage(id: id, role: .approval, content: content, approvalState: .pending,
+      approvalKind: kind))
   }
 
   func resolveApproval(id: UUID, state: ApprovalState) {

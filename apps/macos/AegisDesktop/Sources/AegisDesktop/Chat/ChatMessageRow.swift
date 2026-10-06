@@ -24,8 +24,12 @@ struct ChatMessageRow: View {
   @ViewBuilder private var approvalControls: some View {
     switch message.approvalState {
     case .pending:
+      let presentation = ApprovalPresentation.present(kind: message.approvalKind)
+      Text("승인하면: \(presentation.effect)").font(.callout.weight(presentation.irreversible ? .semibold : .regular))
+        .foregroundStyle(presentation.irreversible ? .red : .primary)
       HStack {
-        Button("승인") { approve(message.id) }.buttonStyle(.borderedProminent)
+        Button(presentation.confirmLabel) { approve(message.id) }.buttonStyle(.borderedProminent)
+          .tint(presentation.irreversible ? .red : .accentColor)
         Button("거절") { reject(message.id) }
       }
     case .approved: Label("승인됨", systemImage: "checkmark.circle.fill").foregroundStyle(.green)

@@ -38,7 +38,8 @@ extension AegisAgent {
     pendingSkillProposal = PendingSkillProposal(candidate: candidate)
     let actions = candidate.steps.map(\.action.rawValue).joined(separator: " → ")
     chat.appendApproval(id: candidate.id, content:
-      "이 작업을 \(candidate.evidenceCount)번 성공했어요. ‘\(candidate.suggestedName)’ Skill로 저장할까요?\n\(actions)")
+      "이 작업을 \(candidate.evidenceCount)번 성공했어요. ‘\(candidate.suggestedName)’ Skill로 저장할까요?\n\(actions)",
+      kind: "skill_save")
   }
 
   func saveSkillProposal() {

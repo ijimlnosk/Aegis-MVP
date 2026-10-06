@@ -6,7 +6,7 @@ extension AegisAgent {
     let action = PendingMacAction(id: id, kind: kind, title: title, detail: detail,
       request: request, arguments: arguments)
     pendingMacAction = action
-    chat.appendApproval(id: action.id, content: "\(title)\n\(detail)")
+    chat.appendApproval(id: action.id, content: "\(title)\n\(detail)", kind: kind)
     LearningMemory.record(request: request, action: kind, result: "승인 대기")
     startWakeListening()
   }
