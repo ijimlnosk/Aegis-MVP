@@ -4,13 +4,19 @@
 
 ## 현재 가능한 것
 
-- 환경 설정된 Ollama 기반 AI 대화와 도구 호출
-- F5-TTS 기반 개인 참조 음성 응답 재생
-- registry에 설정된 여러 프로젝트의 `git status` 조회
-- 승인 후 `npm run typecheck` 실행
-- 브라우저에 실행 기록과 승인 카드 표시
-- API 키와 프로젝트 경로를 서버에서만 관리
-- 별도 로컬 Mac Agent를 통한 활성 앱 확인·승인 후 앱 실행·승인 후 화면 캡처
+웹 앱(`src`)과 별도로, 주 클라이언트는 macOS 메뉴바 앱
+[AegisDesktop](apps/macos/AegisDesktop/README.md)입니다.
+
+- Codex/Ollama 기반 행동 계획과 타입이 정해진 도구 호출 (요청당 최대 5단계)
+- 등록 프로젝트 열기(승인 후), Git·package 상태 조회, typecheck/lint/test/build 검증 실행
+- Codex 읽기 전용 코드 분석, 승인 후 프로젝트 범위 안의 코드 수정과 독립 검증
+- 커밋 계획 → 승인 후 커밋 → 별도 승인 후 push
+- 화면·창 분석, 접근성 API 기반 UI 제어, 승인 후 카카오톡 메시지 전송
+- sol-server의 시스템·Docker·Git 상태 조회와 승인 후 컨테이너 시작·중지·재시작
+- 기억·Skill·대화 기록·작업 이력을 `~/Library/Application Support/Aegis/memory.sqlite`에 저장
+- `/help`, `/status`, `/projects`, `/perf` slash command
+- Tailscale 원격 게이트웨이와 [React Native 리모컨 앱](apps/mobile/README.md)
+- 웹 앱: 브라우저 실행 기록·승인 카드, 별도 로컬 Mac Agent, F5-TTS 참조 음성 응답
 
 ## 실행
 
@@ -66,15 +72,16 @@ command bridge, Tailscale이 모두 실행 중일 때만 사용할 수 있습니
 
 ## 안전 경계
 
-- registry에 등록된 프로젝트 경로만 접근합니다.
-- 모델이 임의 셸 명령을 만들 수 없습니다.
-- 쓰기 가능성이 있는 명령은 명시적인 승인을 요구합니다.
-- 삭제, 파일 수정, 외부 전송 도구는 아직 제공하지 않습니다.
+- registry 또는 project memory에 등록된 프로젝트 경로만 접근합니다.
+- 모델이 임의 셸 명령, 파일 경로, Git refspec을 만들 수 없습니다.
+- 읽기 전용 조회, 창 포커스·스크롤 같은 탐색, 프로젝트의 typecheck/lint/test/build
+  검증은 자동 실행됩니다. 앱 실행, UI 입력, 코드 수정, 커밋, push, 메시지 전송,
+  컨테이너 변경은 단계마다 명시적인 승인을 요구합니다.
+- 코드 수정은 승인 시점의 Git baseline과 변경 파일 수 상한 안에서만 진행되고,
+  typecheck/lint/test/build로 다시 검증합니다.
+- merge, rebase, force push, 브랜치 삭제, 배포, 파일 삭제 도구는 제공하지 않습니다.
 
 ## 다음 단계
 
-1. Push-to-Talk용 로컬 STT/TTS 추가
-2. 대화 및 승인 기록을 SQLite에 저장
-3. 프로젝트별 허용 목록과 명령 정책 추가
-4. Mac 메뉴바 앱으로 패키징
-5. React Native 리모컨 앱 연결
+1. Push-to-Talk용 로컬 STT/TTS를 AegisDesktop에서 다시 활성화
+2. 프로젝트별 허용 목록과 명령 정책 세분화
