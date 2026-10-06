@@ -96,6 +96,16 @@ docker run -d --name ntfy --restart unless-stopped -p <TAILSCALE_IP>:8080:80 \
 폰에 ntfy 앱을 설치하고 서버 `http://<TAILSCALE_IP>:8080`에서 같은 topic을 구독합니다.
 iOS 앱은 자체 서버 알림을 받으려면 서버에 `upstream-base-url` 설정이 추가로 필요합니다.
 
+### 예약 작업
+
+"매일 아침 9시에 PTFriends 상태 알려줘", "평일 18:30에 sol-server 상태 보여줘"처럼 말하면
+매일(또는 평일) 그 시각에 AegisDesktop이 요청을 실행하고 결과를 폰 알림으로 보냅니다.
+"예약 목록 보여줘", "예약 2번 삭제"로 관리합니다. 예약 실행은 승인이 필요한 단계를
+하지 않고 거절하므로 자리를 비운 사이 커밋·전송·컨테이너 변경이 일어나지 않습니다. 예약
+결과 알림은 요청한 결과를 전달하는 것이 목적이라 비밀값을 가린 결과 앞부분(최대 400자)을
+포함합니다. Aegis가 바쁘거나 Mac이 잠들어 1시간 넘게 늦어지면 그날 실행은 건너뜁니다.
+예약은 `~/Library/Application Support/Aegis/schedules.json`에 저장됩니다.
+
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
 참조 음성 및 `.aegis/voices/reference.txt`의 정확한 대본, 그리고 F5-TTS 전용
 가상환경이 필요합니다.

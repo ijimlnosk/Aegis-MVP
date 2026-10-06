@@ -74,6 +74,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   /// When the current phone command began; long ones get a push when they finish.
   var remoteCommandStartedAt: Date?
   let pushNotifier = PushNotifier()
+  let scheduleRunner = ScheduledTaskRunner()
+  /// Set while a schedule runs; such runs refuse any step that needs approval.
+  var scheduledRun: ScheduledTask?
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?
@@ -97,6 +100,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     desktopBridge.sharedAgent = self
     desktopBridge.start()
     keepAwake.start()
+    scheduleRunner.start(agent: self)
     terminationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.willTerminateNotification, object: nil, queue: .main
     ) { [weak self] _ in Task { @MainActor in self?.stop() } }
@@ -106,6 +110,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     contextObserver.stop()
     desktopBridge.stop()
     keepAwake.stop()
+    scheduleRunner.stop()
     if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
     terminationObserver = nil
     codingFindings.removeAll(); activeCodingContinuation = nil

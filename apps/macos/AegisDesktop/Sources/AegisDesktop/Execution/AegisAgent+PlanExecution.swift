@@ -31,6 +31,7 @@ extension AegisAgent {
       executingStepID = step.id
       // Checked before asking so the phone never approves a step that cannot run.
       if let locked = ScreenLockState.blockingMessage(for: step.action) { failCurrentStep(locked); return }
+      if scheduledRun != nil { failCurrentStep(Self.scheduledApprovalRefusal); return }
       if step.action == .executeCodingTask { codingTaskProposalLifecycle = .awaitingApproval }
       if step.action == .createCommit { gitWorkflowContext.state = .awaitingCommitApproval }
       if step.action == .pushCurrentBranch { gitWorkflowContext.state = .awaitingPushApproval }
@@ -44,7 +45,8 @@ extension AegisAgent {
       chat.append(.system, "\(index)/\(total) \(step.action.displayName) 건너뜀 · 이전 단계가 실패했습니다")
       advancePlan()
     case .preflightApproval(let id, let steps):
-      if let locked = steps.lazy.compactMap({ ScreenLockState.blockingMessage(for: $0.action) }).first {
+      if let locked = scheduledRun != nil ? Self.scheduledApprovalRefusal
+        : steps.lazy.compactMap({ ScreenLockState.blockingMessage(for: $0.action) }).first {
         speak(locked, role: .error)
         if planExecutor?.rejectPreflight(id) == true { advancePlan() }
         return
@@ -76,4 +78,6 @@ extension AegisAgent {
     pushNotifier.send(PushMessages.finished(succeeded: summary.status == .succeeded,
       actions: plan.steps.map(\.action), project: plan.steps.compactMap(\.project).first))
   }
+
+  static let scheduledApprovalRefusal = "예약 실행에서는 승인이 필요한 작업을 하지 않습니다. 직접 요청해 주세요."
 }

@@ -23,6 +23,15 @@ enum PushMessages {
       message: event.title, priority: priority, tags: [event.severity == .info ? "information_source" : "rotating_light"])
   }
 
+  /// Scheduled reports are the one push that carries a result: the user asked for exactly this,
+  /// so a redacted, bounded excerpt is sent.
+  static func scheduled(request: String, result: String, succeeded: Bool) -> PushNotification {
+    let excerpt = SecretRedactor.redact(result).trimmingCharacters(in: .whitespacesAndNewlines)
+    return PushNotification(title: "Aegis 예약: \(request.prefix(40))",
+      message: excerpt.isEmpty ? (succeeded ? "완료했습니다." : "실행하지 못했습니다.") : String(excerpt.prefix(400)),
+      priority: succeeded ? 3 : 4, tags: [succeeded ? "alarm_clock" : "x"])
+  }
+
   static func shouldNotifyFinish(startedAt: Date?, now: Date = .now, minimumSeconds: TimeInterval) -> Bool {
     guard let startedAt else { return false }
     return now.timeIntervalSince(startedAt) >= minimumSeconds
