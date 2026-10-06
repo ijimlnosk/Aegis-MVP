@@ -18,7 +18,7 @@ struct AegisView: View {
       }
       .padding()
       Divider()
-      ChatView(store: agent.chat, busy: agent.busy, submit: agent.send,
+      ChatView(store: agent.chat, busy: agent.busy, submit: agent.sendFromDesktop,
         cancel: agent.cancelCurrentOperation,
         approve: agent.approveChatAction, reject: agent.rejectChatAction)
     }

@@ -91,6 +91,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     LearningStore.bootstrap()
     restoreProactivePreferences()
     contextObserver.start()
+    desktopBridge.sharedAgent = self
     desktopBridge.start()
     keepAwake.start()
     terminationObserver = NotificationCenter.default.addObserver(
@@ -106,6 +107,12 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     terminationObserver = nil
     codingFindings.removeAll(); activeCodingContinuation = nil
     activeCodingTaskProposal = nil; codingTaskProposalLifecycle = nil
+  }
+
+  /// Entry point for the Mac window and voice; clears remote tags left by a phone command.
+  func sendFromDesktop(_ text: String) {
+    remoteSessionID = nil; remoteCommandID = nil; remoteRequestText = nil
+    send(text)
   }
 
   func speak(_ text: String, role: ChatRole = .assistant) {

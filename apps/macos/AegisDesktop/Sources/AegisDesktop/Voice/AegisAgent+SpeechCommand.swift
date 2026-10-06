@@ -103,7 +103,7 @@ extension AegisAgent {
         return
       }
       recordActivity("음성 요청 분석")
-      send(text)
+      sendFromDesktop(text)
     }
   }
 }

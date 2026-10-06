@@ -3,7 +3,9 @@ import Foundation
 
 @MainActor
 final class DesktopBridgeSession {
-  let agent = AegisAgent()
+  let agent: AegisAgent
+  /// True when commands run on the Mac window's own agent so both share in-progress context.
+  let sharesDesktopAgent: Bool
   let sessionID: String
   let jobs: CommandJobStore
   let workerJobs: WorkerLeaseStore?
@@ -19,11 +21,14 @@ final class DesktopBridgeSession {
     }
   }
 
-  init(sessionID: String, jobs: CommandJobStore = CommandJobStore()) {
+  init(sessionID: String, jobs: CommandJobStore = CommandJobStore(), sharedAgent: AegisAgent? = nil) {
     self.sessionID = sessionID
     self.jobs = jobs
+    agent = sharedAgent ?? AegisAgent()
+    sharesDesktopAgent = sharedAgent != nil
     workerJobs = try? WorkerLeaseStore(databaseURL: MemoryRepository.defaultDatabaseURL)
     workerAuthorizations = try? WorkerAuthorizationStore(databaseURL: MemoryRepository.defaultDatabaseURL)
+    guard sharedAgent == nil else { return }
     agent.conversationSessionID = sessionID
     agent.gitWorkflowContext.sessionId = sessionID
   }
@@ -31,6 +36,12 @@ final class DesktopBridgeSession {
   func send(id: String, text: String) async -> DesktopBridgeResult {
     if let existing = commandResults[id] { return existing }
     if let recovered = recoveredResult(commandId: id) { return recovered }
+    if sharesDesktopAgent, agent.busy || agent.planExecutor != nil || agent.pendingMacAction != nil {
+      let busy = DesktopBridgeResult(status: "failed",
+        messages: ["Mac에서 다른 작업이 진행 중이거나 승인을 기다리고 있습니다. 끝난 뒤 다시 요청해 주세요."],
+        pendingApproval: nil, failureCode: "internalError")
+      commandResults[id] = busy; persist(id, text, busy); return busy
+    }
     commandStartedAt[id] = .now
     agent.remoteSessionID = sessionID
     agent.remoteCommandID = id

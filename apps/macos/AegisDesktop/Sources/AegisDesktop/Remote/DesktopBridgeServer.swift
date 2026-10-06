@@ -7,6 +7,8 @@ final class DesktopBridgeServer {
   private var listener: NWListener?
   private var sessions: [String: DesktopBridgeSession] = [:]
   private(set) var status = "stopped"
+  /// The Mac window's agent; phone sessions reuse it so context carries across devices.
+  weak var sharedAgent: AegisAgent?
   var hasActiveCommands: Bool { sessions.values.contains(where: \.hasActiveCommand) }
 
   init(configuration: DesktopBridgeConfiguration = .load()) { self.configuration = configuration }
@@ -91,7 +93,7 @@ final class DesktopBridgeServer {
 
   private func session(_ id: String) -> DesktopBridgeSession {
     if let existing = sessions[id] { return existing }
-    let created = DesktopBridgeSession(sessionID: id)
+    let created = DesktopBridgeSession(sessionID: id, sharedAgent: sharedAgent)
     created.agent.desktopBridgeStatus = { [weak self] in self?.status ?? "stopped" }
     sessions[id] = created; return created
   }

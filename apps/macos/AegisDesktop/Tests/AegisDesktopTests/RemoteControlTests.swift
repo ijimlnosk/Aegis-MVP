@@ -73,3 +73,29 @@ import Testing
     executableURL: executable)
   #expect(candidates.last?.path == "/repo/.env.local")
 }
+
+@MainActor @Test func sharedBridgeSessionsReuseTheDesktopAgentContext() {
+  let desktop = AegisAgent()
+  let first = DesktopBridgeSession(sessionID: "S1", sharedAgent: desktop)
+  let second = DesktopBridgeSession(sessionID: "S2", sharedAgent: desktop)
+  #expect(first.agent === desktop && second.agent === desktop)
+  #expect(desktop.conversationSessionID == "desktop")
+}
+
+@MainActor @Test func sharedBridgeSessionRefusesWhileDesktopIsBusy() async throws {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let desktop = AegisAgent(); desktop.busy = true
+  let session = DesktopBridgeSession(sessionID: "S1",
+    jobs: CommandJobStore(databaseURL: root.appendingPathComponent("jobs.sqlite")), sharedAgent: desktop)
+  let result = await session.send(id: "C1", text: "PTFriends 상태 보여줘")
+  #expect(result.status == "failed")
+  #expect(desktop.remoteCommandID == nil)
+}
+
+@MainActor @Test func desktopInputClearsRemoteCommandTags() {
+  let agent = AegisAgent()
+  agent.remoteSessionID = "S1"; agent.remoteCommandID = "C1"; agent.remoteRequestText = "x"
+  agent.sendFromDesktop("")
+  #expect(agent.remoteSessionID == nil && agent.remoteCommandID == nil && agent.remoteRequestText == nil)
+}
