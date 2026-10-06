@@ -75,6 +75,25 @@ AegisDesktop이 실행되는 동안 Mac의 유휴 잠자기를 막습니다(`AEG
 작업이 진행 중이거나 승인을 기다리는 동안 들어온 폰 명령은 실행하지 않고 다시 요청하라고
 안내합니다.
 
+### 폰 푸시 알림
+
+`AEGIS_NOTIFY_SERVER`와 `AEGIS_NOTIFY_TOPIC`을 설정하면 AegisDesktop이 직접 운영하는
+ntfy 서버로 알림을 보냅니다. 폰에서 보낸 작업이 승인을 기다릴 때, 폰 작업이
+`AEGIS_NOTIFY_MIN_SECONDS`(기본 20초)보다 오래 걸려 끝났을 때, 서버·프로젝트 경고가
+생겼을 때 알림이 갑니다. 알림에는 작업 이름과 프로젝트만 들어가며 요청 원문, 메시지
+본문, 명령 출력, 근거는 넣지 않습니다. topic은 구독 비밀값 역할을 하므로 16자 이상의
+랜덤 문자열을 쓰고, 공개 ntfy.sh 대신 Tailscale 안의 서버를 권장합니다.
+
+sol-server 예시:
+
+```bash
+docker run -d --name ntfy --restart unless-stopped -p 8080:80 \
+  -v ntfy-cache:/var/cache/ntfy binwiederhier/ntfy serve --cache-file /var/cache/ntfy/cache.db
+```
+
+폰에 ntfy 앱을 설치하고 서버 `http://sol-server:8080`에서 같은 topic을 구독합니다.
+iOS 앱은 자체 서버 알림을 받으려면 서버에 `upstream-base-url` 설정이 추가로 필요합니다.
+
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
 참조 음성 및 `.aegis/voices/reference.txt`의 정확한 대본, 그리고 F5-TTS 전용
 가상환경이 필요합니다.

@@ -71,6 +71,9 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   var remoteSessionID: String?
   var remoteCommandID: String?
   var remoteRequestText: String?
+  /// When the current phone command began; long ones get a push when they finish.
+  var remoteCommandStartedAt: Date?
+  let pushNotifier = PushNotifier()
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
   private var started = false
   private var terminationObserver: NSObjectProtocol?
@@ -111,7 +114,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
 
   /// Entry point for the Mac window and voice; clears remote tags left by a phone command.
   func sendFromDesktop(_ text: String) {
-    remoteSessionID = nil; remoteCommandID = nil; remoteRequestText = nil
+    remoteSessionID = nil; remoteCommandID = nil; remoteRequestText = nil; remoteCommandStartedAt = nil
     send(text)
   }
 

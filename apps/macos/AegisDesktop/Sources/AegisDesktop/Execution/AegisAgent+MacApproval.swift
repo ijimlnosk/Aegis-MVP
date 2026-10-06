@@ -7,6 +7,9 @@ extension AegisAgent {
       request: request, arguments: arguments)
     pendingMacAction = action
     chat.appendApproval(id: action.id, content: "\(title)\n\(detail)", kind: kind)
+    if remoteCommandID != nil {
+      pushNotifier.send(PushMessages.approval(kind: kind, scope: arguments["project"] ?? "Mac"))
+    }
     LearningMemory.record(request: request, action: kind, result: "승인 대기")
     startWakeListening()
   }

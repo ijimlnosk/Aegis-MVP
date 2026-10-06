@@ -56,6 +56,7 @@ extension AegisAgent {
         speak(answer, role: summary.status == .succeeded ? .assistant : .error)
       }
       finishSkillExecution(executor)
+      notifyRemoteFinish(summary, plan: executor.state.plan)
       if let turn = activeConversationTurnID {
         let status: String = switch summary.status {
         case .succeeded: "succeeded"
@@ -67,5 +68,12 @@ extension AegisAgent {
       }
       planExecutor = nil; executingStepID = nil; busy = false
     }
+  }
+
+  private func notifyRemoteFinish(_ summary: PlanExecutionSummary, plan: AgentPlan) {
+    guard remoteCommandID != nil, let minimum = pushNotifier.configuration?.minimumSeconds,
+      PushMessages.shouldNotifyFinish(startedAt: remoteCommandStartedAt, minimumSeconds: minimum) else { return }
+    pushNotifier.send(PushMessages.finished(succeeded: summary.status == .succeeded,
+      actions: plan.steps.map(\.action), project: plan.steps.compactMap(\.project).first))
   }
 }

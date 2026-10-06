@@ -43,6 +43,7 @@ extension AegisAgent {
   func surface(_ notices: [ProactiveNotice]) {
     for notice in notices {
       let event = notice.event
+      pushNotifier.send(PushMessages.proactive(event))
       chat.append(event.severity == .critical ? .error : .assistant,
         "\(event.message)\n근거: \(event.evidence)")
       if let investigation = notice.investigation {
