@@ -25,16 +25,13 @@ enum ProjectHealthService {
   }
 
   static func format(_ report: ProjectHealthReport) -> String {
-    let state = report.clean ? "clean" : "변경 \(report.changedFileCount)개"
-    let files = report.changedFiles.isEmpty ? "없음" : report.changedFiles.joined(separator: "\n")
-    return """
-    \(report.project) 개발 상태
-    Branch: \(report.branch.isEmpty ? "알 수 없음" : report.branch)
-    Working tree: \(state)
-    변경 파일:
-    \(files)
-    최근 커밋:
-    \(report.recentCommits.isEmpty ? "없음" : report.recentCommits)
-    """
+    let state = report.clean ? "변경 없음" : "변경 파일 \(report.changedFileCount)개"
+    var sections = ["\(report.project) · \(report.branch.isEmpty ? "브랜치 알 수 없음" : report.branch) · \(state)"]
+    if !report.changedFiles.isEmpty {
+      sections.append("변경 파일\n" + MessageSegments.code(report.changedFiles.joined(separator: "\n")))
+    }
+    sections.append(report.recentCommits.isEmpty ? "최근 커밋 없음"
+      : "최근 커밋\n" + MessageSegments.code(TextTable.columns(report.recentCommits)))
+    return sections.joined(separator: "\n\n")
   }
 }
