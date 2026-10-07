@@ -75,6 +75,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
   var remoteCommandStartedAt: Date?
   let pushNotifier = PushNotifier()
   let scheduleRunner = ScheduledTaskRunner()
+  let watchRunner = WatchRunner()
   /// Set while a schedule runs; such runs refuse any step that needs approval.
   var scheduledRun: ScheduledTask?
   var developerValidationResults: [String: [ProjectValidationCheck: ProjectValidationResult]] = [:]
@@ -101,6 +102,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     desktopBridge.start()
     keepAwake.start()
     scheduleRunner.start(agent: self)
+    watchRunner.start(agent: self)
     terminationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.willTerminateNotification, object: nil, queue: .main
     ) { [weak self] _ in Task { @MainActor in self?.stop() } }
@@ -111,6 +113,7 @@ final class AegisAgent: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     desktopBridge.stop()
     keepAwake.stop()
     scheduleRunner.stop()
+    watchRunner.stop()
     if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
     terminationObserver = nil
     codingFindings.removeAll(); activeCodingContinuation = nil

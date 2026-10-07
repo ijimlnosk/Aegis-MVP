@@ -36,6 +36,10 @@ extension AegisAgent {
     if pendingKakaoMessage != nil { interpretKakaoApproval(message); return true }
     if pendingMacAction != nil { interpretMacApproval(message); return true }
     if let schedule = ScheduleIntentParser.parse(message) { handleSchedule(schedule); return true }
+    if let watch = WatchIntentParser.parse(message, project: { [memoryStore] in
+      ProjectEntityResolver.resolve(in: $0, repository: memoryStore.repository)?.name }) {
+      handleWatch(watch); return true
+    }
     if ProjectDiscoveryConfirmationParser.isConfirmation(message) {
       if let discovery = pendingProjectDiscovery {
         let result = memoryStore.handle(.remember(type: .project, key: discovery.name, value: discovery.path))

@@ -22,7 +22,7 @@ extension AegisAgent {
       let task = ScheduledTask(id: UUID(), request: request, hour: hour, minute: minute,
         weekdaysOnly: weekdaysOnly, lastRunAt: .now)
       tasks.append(task)
-      saveSchedules(tasks, store: store, success: "\(task.timeText)에 '\(request)'을 실행하고 결과를 폰으로 알려드릴게요."
+      saveSchedules(tasks, store: store, success: "\(task.timeText)에 '\(request)' 요청을 실행하고 결과를 폰으로 알려드릴게요."
         + " 승인이 필요한 작업은 예약 실행에서 하지 않습니다."
         + (pushNotifier.configuration == nil ? " (알림 서버가 설정되지 않아 결과는 Mac 창에만 표시됩니다.)" : ""))
     }

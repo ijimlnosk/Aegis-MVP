@@ -32,6 +32,11 @@ enum PushMessages {
       priority: succeeded ? 3 : 4, tags: [succeeded ? "alarm_clock" : "x"])
   }
 
+  static func watch(label: String, message: String, succeeded: Bool) -> PushNotification {
+    PushNotification(title: "Aegis 감시: \(label)", message: message,
+      priority: succeeded ? 4 : 3, tags: [succeeded ? "bell" : "hourglass"])
+  }
+
   static func shouldNotifyFinish(startedAt: Date?, now: Date = .now, minimumSeconds: TimeInterval) -> Bool {
     guard let startedAt else { return false }
     return now.timeIntervalSince(startedAt) >= minimumSeconds

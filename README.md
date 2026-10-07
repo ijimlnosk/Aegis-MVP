@@ -106,6 +106,13 @@ iOS 앱은 자체 서버 알림을 받으려면 서버에 `upstream-base-url` �
 포함합니다. Aegis가 바쁘거나 Mac이 잠들어 1시간 넘게 늦어지면 그날 실행은 건너뜁니다.
 예약은 `~/Library/Application Support/Aegis/schedules.json`에 저장됩니다.
 
+### 감시 알림
+
+"PTFriends CI 끝나면 알려줘", "sol-server 복구되면 알려줘"라고 하면 AegisDesktop이 1분마다
+읽기 전용으로 확인하다가 조건이 충족되면 폰 알림을 보냅니다. 요청할 때 이미 충족돼 있으면
+바로 답하고, 6시간이 지나면 감시를 종료합니다. "감시 목록 보여줘", "감시 1번 취소"로
+관리합니다. CI 감시에는 로그인된 GitHub CLI(`gh`)가 필요합니다.
+
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
 참조 음성 및 `.aegis/voices/reference.txt`의 정확한 대본, 그리고 F5-TTS 전용
 가상환경이 필요합니다.
