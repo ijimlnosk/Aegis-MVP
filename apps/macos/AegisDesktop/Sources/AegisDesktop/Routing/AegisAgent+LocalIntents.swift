@@ -4,6 +4,10 @@ extension AegisAgent {
   /// Deterministic resolvers, tried in priority order before any AI backend call.
   func routeLocalIntent(_ message: String) -> Bool {
     let repository = memoryStore.repository
+    if let code = ProjectCodeIntentParser.parse(message, project: {
+      ProjectEntityResolver.resolve(in: $0, repository: repository)?.name }) {
+      handleProjectCode(code); return true
+    }
     if let readOnlyCoding = CodingIntentResolver.explicitReadOnlyPlan(for: message,
       repository: repository, recentWindow: recentUIWindowTarget) {
       execute(readOnlyCoding, request: message); return true

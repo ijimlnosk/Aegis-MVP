@@ -113,6 +113,15 @@ iOS 앱은 자체 서버 알림을 받으려면 서버에 `upstream-base-url` �
 바로 답하고, 6시간이 지나면 감시를 종료합니다. "감시 목록 보여줘", "감시 1번 취소"로
 관리합니다. CI 감시에는 로그인된 GitHub CLI(`gh`)가 필요합니다.
 
+### 코드 검색과 파일 보기
+
+"PTFriends에서 login 찾아줘"는 등록 프로젝트에서 git이 추적하는 파일만 `git grep`으로 찾아
+최대 30곳을 보여주고, "SoolSool README 보여줘"·"PTFriends src/app/page.tsx 보여줘"는 추적 중인
+파일을 최대 200줄까지 보여줍니다. 이름이 여러 곳에 있으면 최상위 파일을 고르고, 그래도
+애매하면 후보 경로를 보여줍니다. `.env*`, 키·인증서, `secret`·`credential`이 들어간 파일은
+검색·조회에서 빠지며 결과의 비밀값처럼 보이는 문자열은 가려집니다. "개선할 부분 찾아줘"처럼
+판단이 필요한 요청은 계속 Codex 분석으로 갑니다.
+
 개인 음성 응답을 사용하려면 `.aegis/voices/aegis-reference.wav`와 같은 경로의
 참조 음성 및 `.aegis/voices/reference.txt`의 정확한 대본, 그리고 F5-TTS 전용
 가상환경이 필요합니다.
