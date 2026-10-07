@@ -52,11 +52,10 @@ enum ServerAgentClient {
       let memory = body?["memory"] as? String ?? "알 수 없음"
       let disk = body?["disk"] as? String ?? "알 수 없음"
       let docker = body?["docker"] as? String ?? "없음"
-      // Command tables (free, df, docker ps) only line up in a monospace block.
-      return "sol-server · \(uptime)\n\n메모리\n\(MessageSegments.code(TextTable.rightAlignHeader(memory)))"
-        + "\n디스크\n\(MessageSegments.code(disk))\nDocker\n\(MessageSegments.code(TextTable.columns(docker)))"
+      // Machine readers (context observer, Docker inventory) parse this raw layout;
+      // ServerResultFormatter builds the chat view from it.
+      return "sol-server\nUptime: \(uptime)\nMemory:\n\(memory)\nDisk:\n\(disk)\nDocker:\n\(docker)"
     }
-    guard let output = body?["output"] as? String else { return "작업을 완료했습니다." }
-    return output.contains("\n") ? MessageSegments.code(TextTable.columns(output)) : output
+    return body?["output"] as? String ?? "작업을 완료했습니다."
   }
 }

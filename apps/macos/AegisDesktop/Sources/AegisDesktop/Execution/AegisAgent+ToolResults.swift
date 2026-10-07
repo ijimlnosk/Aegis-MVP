@@ -28,7 +28,8 @@ extension AegisAgent {
         let result = try await ServerAgentClient.call(tool, arguments: arguments)
         busy = false
         let target = arguments["container"] as? String ?? arguments["project"] as? String ?? "sol-server"
-        finishReadTool(result, action: tool.rawValue, request: request, target: target)
+        finishReadTool(ServerResultFormatter.display(tool, raw: result), action: tool.rawValue,
+          request: request, target: target)
       } catch {
         let target = arguments["container"] as? String ?? arguments["project"] as? String ?? "sol-server"
         memoryStore.recordAction(request: request, action: tool.rawValue, target: target,

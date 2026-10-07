@@ -14,6 +14,7 @@ test("recent requests are capped and fall back to defaults when empty", () => {
   assert.equal(many.length, 6);
   assert.equal(many[0], "요청 9");
   assert.deepEqual(quickRequests([]), DEFAULT_QUICK_REQUESTS);
+  assert.deepEqual(quickRequests(["lint 고쳐줘"]), ["/help", "lint 고쳐줘"]);
 });
 
 test("stored recent requests tolerate corrupt data", () => {

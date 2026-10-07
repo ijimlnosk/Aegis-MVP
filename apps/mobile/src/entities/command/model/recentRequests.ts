@@ -1,5 +1,5 @@
 export const MAX_RECENT_REQUESTS = 6;
-export const DEFAULT_QUICK_REQUESTS = ["/status", "PTFriends 상태 보여줘", "sol-server 상태 보여줘", "PTFriends 어디까지 했지?"];
+export const DEFAULT_QUICK_REQUESTS = ["/help", "PTFriends 상태 보여줘", "sol-server 상태 보여줘", "예약 목록 보여줘"];
 
 /** Most recent first, without duplicates; slash commands stay in the palette instead. */
 export function rememberRequest(recent: readonly string[], text: string): string[] {
@@ -8,8 +8,9 @@ export function rememberRequest(recent: readonly string[], text: string): string
   return [value, ...recent.filter(item => item !== value)].slice(0, MAX_RECENT_REQUESTS);
 }
 
+/** "/help" stays first so the usage guide is always one tap away. */
 export function quickRequests(recent: readonly string[]): string[] {
-  return recent.length > 0 ? [...recent] : DEFAULT_QUICK_REQUESTS;
+  return recent.length > 0 ? ["/help", ...recent.filter(item => item !== "/help")] : DEFAULT_QUICK_REQUESTS;
 }
 
 export function parseRecentRequests(raw: string | undefined): string[] {

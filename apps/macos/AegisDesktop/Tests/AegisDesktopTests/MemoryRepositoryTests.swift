@@ -49,3 +49,15 @@ private func temporaryDatabaseURL() -> URL {
   FileManager.default.temporaryDirectory
     .appending(path: "aegis-memory-tests-\(UUID().uuidString)/memory.sqlite")
 }
+
+@Test func memoryListGroupsTaughtItemsAndHidesToolHistory() {
+  let store = MemoryStore(repository: MemoryRepository(databaseURL: FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString).appendingPathComponent("memory.sqlite")))
+  #expect(store.handle(.list(type: nil)) == "저장된 기억이 없습니다.")
+  store.recordAction(request: "x", action: "get_project_health", target: "PTFriends", result: "ok", succeeded: true)
+  #expect(store.handle(.list(type: nil)).contains("작업 기록 1건은 따로 보관 중"))
+  _ = store.handle(.remember(type: .preference, key: "default_browser", value: "Chrome"))
+  let text = store.handle(.list(type: nil))
+  #expect(text.hasPrefix("선호\n  기본 브라우저: Chrome"))
+  #expect(!text.contains("get_project_health"))
+}

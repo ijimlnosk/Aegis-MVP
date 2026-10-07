@@ -78,3 +78,12 @@ private func resolve(_ text: String) -> String? {
   #expect(TextTable.rightAlignHeader(free) == "               total        used\nMem:           7.6Gi       3.5Gi")
   #expect(TextTable.columns("no tabs here") == "no tabs here")
 }
+
+@Test func serverStatusRawLayoutStaysParseableWhileChatViewIsFormatted() {
+  let raw = "sol-server\nUptime: up 2 days\nMemory:\ntotal  used\nMem:   7.6Gi  3.5Gi\nDisk:\n/dev/a  98G  52G  42G  56% /\nDocker:\nntfy\tUp 22 hours"
+  #expect(DockerInventoryParser.parse("ntfy\tUp 22 hours").first?.name == "ntfy")
+  let view = ServerResultFormatter.display(.status, raw: raw)
+  #expect(view.hasPrefix("sol-server · up 2 days"))
+  #expect(view.contains("```\nntfy  Up 22 hours\n```"))
+  #expect(ServerResultFormatter.display(.containers, raw: "ntfy\tUp\nweb\tUp 3 hours") == "```\nntfy  Up\nweb   Up 3 hours\n```")
+}

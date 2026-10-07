@@ -70,22 +70,5 @@ enum SlashCommandResolver {
     return (["등록된 프로젝트"] + lines).joined(separator: "\n")
   }
 
-  static let helpText: String = {
-    let commands = SlashCommand.allCases.map { "\($0.usage) — \($0.summary)" }
-    return (["Aegis가 할 수 있는 일", "", "명령어"] + commands + ["", capabilities])
-      .joined(separator: "\n")
-  }()
-
-  private static let capabilities = """
-  자연어로 요청하세요. [자동]은 바로 실행, [승인]은 확인 후 실행합니다.
-  - 프로젝트·Git [자동]: 상태, 브랜치, 최근 커밋, 변경 파일, diff 요약, 배포 준비 점검
-  - 검증 [자동]: typecheck·lint·test·build 실행
-  - 코딩 에이전트: 분석·수정 제안 [자동], 수정 실행·롤백 [승인]
-  - Git 작업 [승인]: 커밋 계획 후 커밋, 현재 브랜치 push / CI·PR 상태 [자동]
-  - 서버: sol-server·Docker 상태와 로그 [자동], 컨테이너 시작·중지·재시작 [승인]
-  - Mac: 활성 앱·실행 중인 앱·화면 인식 [자동], 앱·프로젝트 열기·닫기·클립보드 변경 [승인]
-  - 창·UI 조작: 창 목록·UI 요소 조회 [자동], 클릭·입력 [승인]
-  - 기억: 사실·선호·별칭·프로젝트 기억 [자동], 반복 작업을 Skill로 저장 [승인]
-  - 메시지: 카카오톡 전송 [승인]
-  """
+  static var helpText: String { AegisGuide.text() }
 }
