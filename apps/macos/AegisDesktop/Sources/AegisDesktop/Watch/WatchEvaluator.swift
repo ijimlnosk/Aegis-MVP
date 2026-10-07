@@ -28,7 +28,9 @@ enum WatchEvaluator {
     await Task.detached {
       do {
         let root = try ProjectCommandPolicy.projectURL(project, repository: repository)
-        guard let run = try GitHubStatusReader.latestRun(root: root) else { return .broken("\(project)에서 CI 실행 기록을 찾지 못했습니다.") }
+        guard let run = try GitHubStatusReader.latestRun(root: root) else {
+          return .broken(GitHubStatusReader.noRunsMessage(project))
+        }
         return ciOutcome(status: run.status, conclusion: run.conclusion, name: run.name, project: project)
       } catch GitWorkflowError.authenticationRequired {
         return .broken("GitHub CLI(gh)가 없거나 로그인되지 않아 CI를 확인할 수 없습니다.")
