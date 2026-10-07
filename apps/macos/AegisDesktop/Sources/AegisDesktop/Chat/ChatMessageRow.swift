@@ -10,8 +10,7 @@ struct ChatMessageRow: View {
       if message.role == .user { Spacer(minLength: 60) }
       VStack(alignment: .leading, spacing: 8) {
         Text(label).font(.caption.bold()).foregroundStyle(labelColor)
-        Text(message.content).textSelection(.enabled)
-          .font(message.role == .system ? .caption : .body)
+        MessageContent(content: message.content, font: message.role == .system ? .caption : .body)
         if message.role == .approval { approvalControls }
       }
       .padding(12)
@@ -56,6 +55,26 @@ struct ChatMessageRow: View {
     case .error: .red.opacity(0.12)
     case .system: .secondary.opacity(0.10)
     case .assistant: .secondary.opacity(0.08)
+    }
+  }
+}
+
+/// Prose as text, fenced parts as a monospace box that scrolls sideways instead of wrapping.
+private struct MessageContent: View {
+  let content: String
+  let font: Font
+
+  var body: some View {
+    ForEach(Array(MessageSegments.split(content).enumerated()), id: \.offset) { _, segment in
+      switch segment {
+      case .text(let text): Text(text).font(font).textSelection(.enabled)
+      case .code(let code):
+        ScrollView(.horizontal) {
+          Text(code).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            .fixedSize(horizontal: true, vertical: false).padding(8)
+        }
+        .background(.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+      }
     }
   }
 }

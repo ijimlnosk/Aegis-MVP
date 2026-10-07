@@ -23,10 +23,27 @@ enum ProjectCodeReader {
     } catch ProjectCommandError.commandExited(_, 1) {
       return "\(project)에서 '\(query)'를 찾지 못했습니다."
     }
-    let lines = output.split(separator: "\n").map(String.init)
-    let shown = lines.prefix(maximumMatches).map { SecretRedactor.redact(String($0.prefix(200))) }
-    let more = lines.count > maximumMatches ? "\n… 외 \(lines.count - maximumMatches)곳 더 있습니다. 검색어를 좁혀 주세요." : ""
-    return "\(project)에서 '\(query)' 검색 결과 (\(lines.count)곳):\n" + shown.joined(separator: "\n") + more
+    return formatSearch(output, query: query, project: project)
+  }
+
+  /// Groups git grep hits by file with aligned line numbers inside a code block.
+  static func formatSearch(_ output: String, query: String, project: String) -> String {
+    let hits = output.split(separator: "\n").compactMap { line -> (String, String, String)? in
+      let parts = line.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+      return parts.count == 3 ? (parts[0], parts[1], parts[2]) : nil
+    }
+    let shown = hits.prefix(maximumMatches)
+    let files = Set(hits.map(\.0)).count
+    var blocks: [String] = []
+    var current = ""
+    for (path, line, content) in shown {
+      if path != current { blocks.append((blocks.isEmpty ? "" : "\n") + path); current = path }
+      let code = SecretRedactor.redact(content.trimmingCharacters(in: .whitespaces)).prefix(160)
+      blocks.append(String(repeating: " ", count: max(0, 5 - line.count)) + line + "  " + code)
+    }
+    let more = hits.count > maximumMatches ? "\n\(maximumMatches)곳만 보여드렸습니다. 검색어를 좁혀 보세요." : ""
+    return "\(project)에서 '\(query)' · \(hits.count)곳 (파일 \(files)개)\n"
+      + MessageSegments.code(blocks.joined(separator: "\n")) + more
   }
 
   static func read(_ file: String, project: String, root: URL) throws -> String {
@@ -43,10 +60,24 @@ enum ProjectCodeReader {
     let url = root.appendingPathComponent(path).standardizedFileURL
     guard url.path.hasPrefix(root.standardizedFileURL.path + "/"),
       let text = try? String(contentsOf: url, encoding: .utf8) else { return "\(path)는 텍스트 파일로 읽을 수 없습니다." }
+    return formatFile(text, path: path, project: project)
+  }
+
+  /// Prose files read as text; everything else gets numbered lines in a code block.
+  static func formatFile(_ text: String, path: String, project: String) -> String {
     let lines = text.components(separatedBy: "\n")
-    let body = SecretRedactor.redact(lines.prefix(maximumLines).joined(separator: "\n"))
-    let range = lines.count > maximumLines ? " (\(lines.count)줄 중 1-\(maximumLines)줄)" : ""
-    return "\(project)/\(path)\(range)\n\(body)"
+    let shown = lines.prefix(maximumLines).map(SecretRedactor.redact)
+    let range = lines.count > maximumLines ? "\(lines.count)줄 중 1-\(maximumLines)줄" : "\(lines.count)줄"
+    let header = "\(project)/\(path) · \(range)"
+    if ["md", "txt"].contains((path as NSString).pathExtension.lowercased()) {
+      return header + "\n\n" + shown.joined(separator: "\n")
+    }
+    let width = String(shown.count).count
+    let numbered = shown.enumerated().map { index, line in
+      let number = String(index + 1)
+      return String(repeating: " ", count: width - number.count) + number + "  " + line
+    }
+    return header + "\n" + MessageSegments.code(numbered.joined(separator: "\n"))
   }
 
   /// Exact path first; otherwise a case-insensitive file-name match ("README" finds README.md).

@@ -43,9 +43,38 @@ private func resolve(_ text: String) -> String? {
   _ = try ProjectCommandPolicy.run("/usr/bin/git", ["add", "auth.ts", "GUIDE.md", "docs/GUIDE.md"], at: root)
   #expect(try ProjectCodeReader.read("GUIDE", project: "P", root: root).hasSuffix("top"))
   let found = try ProjectCodeReader.search("login", project: "P", root: root)
-  #expect(found.contains("auth.ts:1:"))
+  #expect(found.contains("auth.ts\n    1  export function login()"))
   #expect(try ProjectCodeReader.search("topsecret", project: "P", root: root).contains("찾지 못했습니다"))
   let shown = try ProjectCodeReader.read("auth.ts", project: "P", root: root)
   #expect(shown.contains("login") && !shown.contains("abc123secretvalue"))
   #expect(try ProjectCodeReader.read(".env.local", project: "P", root: root).contains("찾지 못했습니다"))
+}
+
+@Test func searchResultsGroupByFileInsideACodeBlock() {
+  let output = "src/a.ts:3:login()\nsrc/a.ts:10:  const x = login\nsrc/b.ts:1:import { login }"
+  let text = ProjectCodeReader.formatSearch(output, query: "login", project: "P")
+  #expect(text.hasPrefix("P에서 'login' · 3곳 (파일 2개)"))
+  #expect(text.contains("```\nsrc/a.ts\n    3  login()\n   10  const x = login\n\nsrc/b.ts\n    1  import { login }\n```"))
+}
+
+@Test func fileViewNumbersCodeButLeavesProseAsText() {
+  let code = ProjectCodeReader.formatFile("a\nb", path: "src/x.ts", project: "P")
+  #expect(code == "P/src/x.ts · 2줄\n```\n1  a\n2  b\n```")
+  let prose = ProjectCodeReader.formatFile("# Title", path: "README.md", project: "P")
+  #expect(prose == "P/README.md · 1줄\n\n# Title")
+}
+
+@Test func messageSegmentsSplitFencesAndTolerateTruncation() {
+  #expect(MessageSegments.split("결과\n```\nline 1\n  line 2\n```\n끝")
+    == [.text("결과"), .code("line 1\n  line 2"), .text("끝")])
+  #expect(MessageSegments.split("머리\n```\ncut off") == [.text("머리"), .code("cut off")])
+  #expect(MessageSegments.split("plain") == [.text("plain")])
+}
+
+@Test func textTableRealignsDockerAndFreeOutput() {
+  #expect(TextTable.columns("web\tUp 3 hours\t127.0.0.1:3201\nntfy\tUp 22 hours\t100.74.88.48:8080")
+    == "web   Up 3 hours   127.0.0.1:3201\nntfy  Up 22 hours  100.74.88.48:8080")
+  let free = "total        used\nMem:           7.6Gi       3.5Gi"
+  #expect(TextTable.rightAlignHeader(free) == "               total        used\nMem:           7.6Gi       3.5Gi")
+  #expect(TextTable.columns("no tabs here") == "no tabs here")
 }
