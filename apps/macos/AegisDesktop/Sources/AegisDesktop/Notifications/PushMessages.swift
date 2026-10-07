@@ -37,6 +37,11 @@ enum PushMessages {
       priority: succeeded ? 4 : 3, tags: [succeeded ? "bell" : "hourglass"])
   }
 
+  /// The note is the user's own words and the whole point of the reminder, so it is sent.
+  static func reminder(_ note: String) -> PushNotification {
+    PushNotification(title: "Aegis 리마인더", message: note, priority: 4, tags: ["alarm_clock"])
+  }
+
   static func shouldNotifyFinish(startedAt: Date?, now: Date = .now, minimumSeconds: TimeInterval) -> Bool {
     guard let startedAt else { return false }
     return now.timeIntervalSince(startedAt) >= minimumSeconds

@@ -33,3 +33,45 @@ extension AegisAgent {
     catch { speak("예약을 저장하지 못했습니다: \(error.localizedDescription)", role: .error) }
   }
 }
+
+extension AegisAgent {
+  func handleReminder(_ intent: ReminderIntent) {
+    let store = scheduleRunner.reminders
+    var reminders = store.load()
+    switch intent {
+    case .list:
+      speak(reminders.isEmpty ? "예정된 리마인더가 없습니다." : "리마인더:\n" + reminders.enumerated().map {
+        "\($0.offset + 1). \(Self.when($0.element.fireAt)) · \($0.element.summary)"
+      }.joined(separator: "\n"))
+    case .cancel(let index):
+      guard reminders.indices.contains(index - 1) else { speak("\(index)번 리마인더가 없습니다.", role: .error); return }
+      let removed = reminders.remove(at: index - 1)
+      saveReminders(reminders, store: store, success: "\(Self.when(removed.fireAt)) 리마인더를 취소했습니다.")
+    case .create(let content, let fireAt):
+      guard reminders.count < ReminderStore.maximum else {
+        speak("리마인더는 최대 \(ReminderStore.maximum)개까지 만들 수 있습니다.", role: .error); return
+      }
+      let reminder = Reminder(id: UUID(), content: content, fireAt: fireAt)
+      reminders.append(reminder)
+      let what: String = switch content {
+      case .note(let text): text.isEmpty ? "알려드릴게요." : "'\(text)'라고 알려드릴게요."
+      case .request(let request): "'\(request)' 요청을 실행하고 결과를 알려드릴게요. 승인이 필요한 작업은 하지 않습니다."
+      }
+      saveReminders(reminders, store: store, success: "\(Self.when(fireAt))에 \(what)"
+        + (pushNotifier.configuration == nil ? " (알림 서버가 설정되지 않아 Mac 창에만 표시됩니다.)" : ""))
+    }
+  }
+
+  static func when(_ date: Date) -> String {
+    let calendar = Calendar.current
+    let day = calendar.isDateInToday(date) ? "오늘" : calendar.isDateInTomorrow(date) ? "내일"
+      : date.formatted(.dateTime.month().day())
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return "\(day) " + String(format: "%02d:%02d", components.hour ?? 0, components.minute ?? 0)
+  }
+
+  private func saveReminders(_ reminders: [Reminder], store: ReminderStore, success: String) {
+    do { try store.save(reminders); speak(success) }
+    catch { speak("리마인더를 저장하지 못했습니다: \(error.localizedDescription)", role: .error) }
+  }
+}
